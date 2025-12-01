@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.BigInteger
 
 /**
  * 账户管理服务
@@ -910,6 +911,197 @@ class AccountService(
             }
         } catch (e: Exception) {
             logger.error("获取市场价格异常: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 获取可赎回仓位统计
+     */
+    suspend fun getRedeemablePositionsSummary(accountId: Long? = null): Result<com.wrbug.polymarketbot.dto.RedeemablePositionsSummary> {
+        return try {
+            val positionsResult = getAllPositions()
+            positionsResult.fold(
+                onSuccess = { positionListResponse ->
+                    // 筛选可赎回的仓位
+                    val redeemablePositions = positionListResponse.currentPositions.filter { it.redeemable }
+                    
+                    // 如果指定了账户ID，进一步筛选
+                    val filteredPositions = if (accountId != null) {
+                        redeemablePositions.filter { it.accountId == accountId }
+                    } else {
+                        redeemablePositions
+                    }
+                    
+                    // 计算总价值（赎回是1:1，所以价值等于数量）
+                    val totalValue = filteredPositions.fold(BigDecimal.ZERO) { sum, pos ->
+                        sum.add(pos.quantity.toSafeBigDecimal())
+                    }
+                    
+                    // 转换为可赎回仓位信息列表
+                    val redeemableInfoList = filteredPositions.map { pos ->
+                        com.wrbug.polymarketbot.dto.RedeemablePositionInfo(
+                            accountId = pos.accountId,
+                            accountName = pos.accountName,
+                            marketId = pos.marketId,
+                            marketTitle = pos.marketTitle,
+                            side = pos.side,
+                            outcomeIndex = pos.outcomeIndex ?: 0,
+                            quantity = pos.quantity,
+                            value = pos.quantity  // 赎回价值等于数量（1:1）
+                        )
+                    }
+                    
+                    Result.success(
+                        com.wrbug.polymarketbot.dto.RedeemablePositionsSummary(
+                            totalCount = redeemableInfoList.size,
+                            totalValue = totalValue.toPlainString(),
+                            positions = redeemableInfoList
+                        )
+                    )
+                },
+                onFailure = { e ->
+                    Result.failure(Exception("查询仓位失败: ${e.message}"))
+                }
+            )
+        } catch (e: Exception) {
+            logger.error("获取可赎回仓位统计失败: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 赎回仓位
+     * 支持多账户、多仓位赎回（自动按账户和市场分组）
+     */
+    suspend fun redeemPositions(request: com.wrbug.polymarketbot.dto.PositionRedeemRequest): Result<com.wrbug.polymarketbot.dto.PositionRedeemResponse> {
+        return try {
+            if (request.positions.isEmpty()) {
+                return Result.failure(IllegalArgumentException("赎回仓位列表不能为空"))
+            }
+            
+            // 1. 验证仓位是否存在且可赎回
+            val positionsResult = getAllPositions()
+            val allPositions = positionsResult.getOrElse {
+                return Result.failure(Exception("查询仓位失败: ${it.message}"))
+            }
+            
+            // 2. 按账户分组
+            val positionsByAccount = request.positions.groupBy { it.accountId }
+            
+            // 3. 验证所有账户是否存在
+            val accounts = mutableMapOf<Long, Account>()
+            for (accountId in positionsByAccount.keys) {
+                val account = accountRepository.findById(accountId).orElse(null)
+                    ?: return Result.failure(IllegalArgumentException("账户不存在: $accountId"))
+                accounts[accountId] = account
+            }
+            
+            // 4. 验证并收集要赎回的仓位信息（按账户分组）
+            val accountRedeemData = mutableMapOf<Long, MutableList<Pair<AccountPositionDto, BigInteger>>>()
+            val accountRedeemedInfo = mutableMapOf<Long, MutableList<com.wrbug.polymarketbot.dto.RedeemedPositionInfo>>()
+            
+            for ((accountId, requestItems) in positionsByAccount) {
+                val accountPositions = mutableListOf<Pair<AccountPositionDto, BigInteger>>()
+                val accountInfo = mutableListOf<com.wrbug.polymarketbot.dto.RedeemedPositionInfo>()
+                
+                for (requestItem in requestItems) {
+                    val position = allPositions.currentPositions.find {
+                        it.accountId == accountId &&
+                        it.marketId == requestItem.marketId &&
+                        it.outcomeIndex == requestItem.outcomeIndex
+                    }
+                    
+                    if (position == null) {
+                        return Result.failure(IllegalArgumentException("仓位不存在: accountId=$accountId, marketId=${requestItem.marketId}, outcomeIndex=${requestItem.outcomeIndex}"))
+                    }
+                    
+                    if (!position.redeemable) {
+                        return Result.failure(IllegalStateException("仓位不可赎回: accountId=$accountId, marketId=${requestItem.marketId}, outcomeIndex=${requestItem.outcomeIndex}"))
+                    }
+                    
+                    // 计算 indexSet = 2^outcomeIndex
+                    val indexSet = BigInteger.TWO.pow(requestItem.outcomeIndex)
+                    accountPositions.add(Pair(position, indexSet))
+                    
+                    accountInfo.add(
+                        com.wrbug.polymarketbot.dto.RedeemedPositionInfo(
+                            marketId = position.marketId,
+                            side = position.side,
+                            outcomeIndex = requestItem.outcomeIndex,
+                            quantity = position.quantity,
+                            value = position.quantity  // 赎回价值等于数量（1:1）
+                        )
+                    )
+                }
+                
+                accountRedeemData[accountId] = accountPositions
+                accountRedeemedInfo[accountId] = accountInfo
+            }
+            
+            // 5. 对每个账户执行赎回
+            val accountTransactions = mutableListOf<com.wrbug.polymarketbot.dto.AccountRedeemTransaction>()
+            var totalRedeemedValue = BigDecimal.ZERO
+            
+            for ((accountId, positions) in accountRedeemData) {
+                val account = accounts[accountId]!!
+                val redeemedInfo = accountRedeemedInfo[accountId]!!
+                
+                // 按市场分组（同一市场的仓位可以批量赎回）
+                val positionsByMarket = positions.groupBy { it.first.marketId }
+                
+                // 对每个市场执行赎回
+                var lastTxHash: String? = null
+                for ((marketId, marketPositions) in positionsByMarket) {
+                    val indexSets = marketPositions.map { it.second }
+                    
+                    // 调用区块链服务赎回仓位
+                    val redeemResult = blockchainService.redeemPositions(
+                        privateKey = account.privateKey,
+                        proxyAddress = account.proxyAddress,
+                        conditionId = marketId,
+                        indexSets = indexSets
+                    )
+                    
+                    redeemResult.fold(
+                        onSuccess = { txHash ->
+                            lastTxHash = txHash
+                            logger.info("账户 $accountId 市场 $marketId 赎回成功: txHash=$txHash, indexSets=$indexSets")
+                        },
+                        onFailure = { e ->
+                            logger.error("账户 $accountId 市场 $marketId 赎回失败: ${e.message}", e)
+                            return Result.failure(Exception("赎回失败: 账户 $accountId 市场 $marketId - ${e.message}"))
+                        }
+                    )
+                }
+                
+                // 计算该账户的赎回总价值
+                val accountTotalValue = redeemedInfo.fold(BigDecimal.ZERO) { sum, info ->
+                    sum.add(info.value.toSafeBigDecimal())
+                }
+                totalRedeemedValue = totalRedeemedValue.add(accountTotalValue)
+                
+                // 添加到交易列表
+                accountTransactions.add(
+                    com.wrbug.polymarketbot.dto.AccountRedeemTransaction(
+                        accountId = accountId,
+                        accountName = account.accountName,
+                        transactionHash = lastTxHash ?: "",
+                        positions = redeemedInfo
+                    )
+                )
+            }
+            
+            // 6. 返回结果
+            Result.success(
+                com.wrbug.polymarketbot.dto.PositionRedeemResponse(
+                    transactions = accountTransactions,
+                    totalRedeemedValue = totalRedeemedValue.toPlainString(),
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+        } catch (e: Exception) {
+            logger.error("赎回仓位异常: ${e.message}", e)
             Result.failure(e)
         }
     }

@@ -105,6 +105,18 @@ export const apiService = {
     sellPosition: (data: any) => 
       apiClient.post<ApiResponse<any>>('/copy-trading/accounts/positions/sell', data),
     
+    /**
+     * 获取可赎回仓位统计
+     */
+    getRedeemableSummary: (data: { accountId?: number }) => 
+      apiClient.post<ApiResponse<any>>('/copy-trading/accounts/positions/redeemable-summary', data),
+    
+    /**
+     * 赎回仓位
+     */
+    redeemPositions: (data: any) => 
+      apiClient.post<ApiResponse<any>>('/copy-trading/accounts/positions/redeem', data),
+    
   },
   
   /**

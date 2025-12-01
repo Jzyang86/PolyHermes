@@ -278,5 +278,99 @@ object Eip712Encoder {
         
         return keccak256(encoded)
     }
+    
+    /**
+     * 编码 Gnosis Safe 域分隔符
+     * Domain: { verifyingContract: address }
+     * 参考: Gnosis Safe 合约的 EIP-712 域定义
+     */
+    fun encodeSafeDomain(
+        verifyingContract: String
+    ): ByteArray {
+        val domainTypeHash = encodeType(
+            "EIP712Domain",
+            listOf(
+                "verifyingContract" to "address"
+            )
+        )
+        
+        val contractBytes = encodeAddress(verifyingContract)
+        
+        val encoded = ByteArray(32 + 32)
+        System.arraycopy(domainTypeHash, 0, encoded, 0, 32)
+        System.arraycopy(contractBytes, 0, encoded, 32, 32)
+        
+        return keccak256(encoded)
+    }
+    
+    /**
+     * 编码 Gnosis Safe SafeTx 消息哈希
+     * SafeTx: { to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, nonce }
+     * 参考: Gnosis Safe 合约的 SafeTx 结构
+     */
+    fun encodeSafeTx(
+        to: String,
+        value: BigInteger,
+        data: String,
+        operation: Int, // 0 = CALL, 1 = DELEGATECALL
+        safeTxGas: BigInteger,
+        baseGas: BigInteger,
+        gasPrice: BigInteger,
+        gasToken: String,
+        refundReceiver: String,
+        nonce: BigInteger
+    ): ByteArray {
+        val safeTxTypeHash = encodeType(
+            "SafeTx",
+            listOf(
+                "to" to "address",
+                "value" to "uint256",
+                "data" to "bytes",
+                "operation" to "uint8",
+                "safeTxGas" to "uint256",
+                "baseGas" to "uint256",
+                "gasPrice" to "uint256",
+                "gasToken" to "address",
+                "refundReceiver" to "address",
+                "nonce" to "uint256"
+            )
+        )
+        
+        // 编码字段
+        val toBytes = encodeAddress(to)
+        val valueBytes = encodeUint256(value)
+        // data 是 bytes 类型，需要先计算 keccak256 哈希
+        val dataBytes = if (data.isBlank() || data == "0x") {
+            ByteArray(32) // 空 bytes 的哈希
+        } else {
+            val cleanData = data.removePrefix("0x")
+            val dataByteArray = Numeric.hexStringToByteArray("0x$cleanData")
+            keccak256(dataByteArray)
+        }
+        val operationBytes = encodeUint256(BigInteger.valueOf(operation.toLong()))
+        val safeTxGasBytes = encodeUint256(safeTxGas)
+        val baseGasBytes = encodeUint256(baseGas)
+        val gasPriceBytes = encodeUint256(gasPrice)
+        val gasTokenBytes = encodeAddress(gasToken)
+        val refundReceiverBytes = encodeAddress(refundReceiver)
+        val nonceBytes = encodeUint256(nonce)
+        
+        // 组合所有字段
+        val encoded = ByteArray(32 * 11)  // 11 个字段，每个 32 字节
+        var offset = 0
+        System.arraycopy(safeTxTypeHash, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(toBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(valueBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(dataBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(operationBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(safeTxGasBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(baseGasBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(gasPriceBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(gasTokenBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(refundReceiverBytes, 0, encoded, offset, 32); offset += 32
+        System.arraycopy(nonceBytes, 0, encoded, offset, 32)
+        
+        return keccak256(encoded)
+    }
 }
 

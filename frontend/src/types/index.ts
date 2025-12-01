@@ -304,3 +304,73 @@ export interface OrderPushMessage {
   timestamp?: number  // 推送时间戳
 }
 
+/**
+ * 账户赎回仓位项（包含账户ID）
+ */
+export interface AccountRedeemPositionItem {
+  accountId: number
+  marketId: string
+  outcomeIndex: number
+  side?: string
+}
+
+/**
+ * 仓位赎回请求（支持多账户）
+ */
+export interface PositionRedeemRequest {
+  positions: AccountRedeemPositionItem[]
+}
+
+/**
+ * 赎回的仓位信息
+ */
+export interface RedeemedPositionInfo {
+  marketId: string
+  side: string
+  outcomeIndex: number
+  quantity: string
+  value: string
+}
+
+/**
+ * 账户赎回交易信息
+ */
+export interface AccountRedeemTransaction {
+  accountId: number
+  accountName?: string
+  transactionHash: string
+  positions: RedeemedPositionInfo[]
+}
+
+/**
+ * 仓位赎回响应
+ */
+export interface PositionRedeemResponse {
+  transactions: AccountRedeemTransaction[]
+  totalRedeemedValue: string
+  createdAt: number
+}
+
+/**
+ * 可赎回仓位信息
+ */
+export interface RedeemablePositionInfo {
+  accountId: number
+  accountName?: string
+  marketId: string
+  marketTitle?: string
+  side: string
+  outcomeIndex: number
+  quantity: string
+  value: string
+}
+
+/**
+ * 可赎回仓位统计响应
+ */
+export interface RedeemablePositionsSummary {
+  totalCount: number
+  totalValue: string
+  positions: RedeemablePositionInfo[]
+}
+

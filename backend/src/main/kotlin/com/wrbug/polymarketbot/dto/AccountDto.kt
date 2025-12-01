@@ -188,3 +188,82 @@ data class MarketPriceResponse(
     val midpoint: String?      // 中间价
 )
 
+/**
+ * 仓位赎回请求
+ */
+data class PositionRedeemRequest(
+    val positions: List<AccountRedeemPositionItem>  // 要赎回的仓位列表（支持多账户）
+)
+
+/**
+ * 账户赎回仓位项（包含账户ID）
+ */
+data class AccountRedeemPositionItem(
+    val accountId: Long,           // 账户ID（必需）
+    val marketId: String,          // 市场ID（conditionId）
+    val outcomeIndex: Int,          // 结果索引（0, 1, 2...）
+    val side: String? = null        // 结果名称（可选，用于显示）
+)
+
+/**
+ * 赎回仓位项
+ */
+data class RedeemPositionItem(
+    val marketId: String,          // 市场ID（conditionId）
+    val outcomeIndex: Int,         // 结果索引（0, 1, 2...）
+    val side: String? = null      // 结果名称（可选，用于显示）
+)
+
+/**
+ * 仓位赎回响应
+ */
+data class PositionRedeemResponse(
+    val transactions: List<AccountRedeemTransaction>,  // 每个账户的赎回交易
+    val totalRedeemedValue: String,  // 赎回总价值（USDC）
+    val createdAt: Long             // 创建时间戳
+)
+
+/**
+ * 账户赎回交易信息
+ */
+data class AccountRedeemTransaction(
+    val accountId: Long,
+    val accountName: String?,
+    val transactionHash: String,    // 交易哈希
+    val positions: List<RedeemedPositionInfo>  // 赎回的仓位信息
+)
+
+/**
+ * 赎回的仓位信息
+ */
+data class RedeemedPositionInfo(
+    val marketId: String,
+    val side: String,
+    val outcomeIndex: Int,
+    val quantity: String,          // 赎回数量
+    val value: String               // 赎回价值（USDC，1:1）
+)
+
+/**
+ * 可赎回仓位统计响应
+ */
+data class RedeemablePositionsSummary(
+    val totalCount: Int,            // 可赎回仓位总数
+    val totalValue: String,        // 可赎回总价值（USDC）
+    val positions: List<RedeemablePositionInfo>  // 可赎回仓位列表
+)
+
+/**
+ * 可赎回仓位信息
+ */
+data class RedeemablePositionInfo(
+    val accountId: Long,
+    val accountName: String?,
+    val marketId: String,
+    val marketTitle: String?,
+    val side: String,
+    val outcomeIndex: Int,
+    val quantity: String,
+    val value: String               // 价值（USDC，1:1）
+)
+

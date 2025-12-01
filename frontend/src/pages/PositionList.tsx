@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Card, Table, Tag, message, Space, Input, Radio, Select, Button, Row, Col, Empty, Modal, Form } from 'antd'
+import { Card, Table, Tag, message, Space, Input, Radio, Select, Button, Row, Col, Empty, Modal, Form, Descriptions } from 'antd'
 import { SearchOutlined, AppstoreOutlined, UnorderedListOutlined, UpOutlined, DownOutlined } from '@ant-design/icons'
 import { apiService } from '../services/api'
-import type { AccountPosition, Account, PositionPushMessage, PositionSellRequest, MarketPriceResponse } from '../types'
+import type { AccountPosition, Account, PositionPushMessage, PositionSellRequest, MarketPriceResponse, RedeemablePositionsSummary, PositionRedeemRequest } from '../types'
 import { getPositionKey } from '../types'
 import { useMediaQuery } from 'react-responsive'
 import { useWebSocketSubscription } from '../hooks/useWebSocket'
@@ -32,6 +32,10 @@ const PositionList: React.FC = () => {
   const [form] = Form.useForm()
   const [submitting, setSubmitting] = useState(false)
   const [wsConnected, setWsConnected] = useState(false)
+  const [redeemModalVisible, setRedeemModalVisible] = useState(false)
+  const [redeemableSummary, setRedeemableSummary] = useState<RedeemablePositionsSummary | null>(null)
+  const [loadingRedeemableSummary, setLoadingRedeemableSummary] = useState(false)
+  const [redeeming, setRedeeming] = useState(false)
   
   useEffect(() => {
     fetchAccounts()
@@ -51,6 +55,70 @@ const PositionList: React.FC = () => {
       removeListener()
     }
   }, [])
+  
+  // 当仓位数据变化时，更新可赎回统计
+  useEffect(() => {
+    if (currentPositions.length > 0) {
+      fetchRedeemableSummary()
+    }
+  }, [currentPositions, selectedAccountId])
+  
+  // 获取可赎回仓位统计
+  const fetchRedeemableSummary = async () => {
+    setLoadingRedeemableSummary(true)
+    try {
+      const response = await apiService.accounts.getRedeemableSummary({ accountId: selectedAccountId })
+      if (response.data.code === 0 && response.data.data) {
+        setRedeemableSummary(response.data.data)
+      }
+    } catch (error: any) {
+      console.error('获取可赎回统计失败:', error)
+    } finally {
+      setLoadingRedeemableSummary(false)
+    }
+  }
+  
+  // 处理赎回按钮点击
+  const handleRedeemClick = async () => {
+    await fetchRedeemableSummary()
+    setRedeemModalVisible(true)
+  }
+  
+  // 提交赎回
+  const handleRedeemSubmit = async () => {
+    if (!redeemableSummary || redeemableSummary.positions.length === 0) {
+      message.warning('没有可赎回的仓位')
+      return
+    }
+    
+    setRedeeming(true)
+    try {
+      const request: PositionRedeemRequest = {
+        positions: redeemableSummary.positions.map(pos => ({
+          accountId: pos.accountId,
+          marketId: pos.marketId,
+          outcomeIndex: pos.outcomeIndex,
+          side: pos.side
+        }))
+      }
+      
+      const response = await apiService.accounts.redeemPositions(request)
+      if (response.data.code === 0 && response.data.data) {
+        const transactions = response.data.data.transactions || []
+        const txHashes = transactions.map((tx: any) => tx.transactionHash.substring(0, 10) + '...').join(', ')
+        message.success(`赎回成功！共 ${transactions.length} 个账户，交易哈希: ${txHashes}`)
+        setRedeemModalVisible(false)
+        // 刷新可赎回统计
+        await fetchRedeemableSummary()
+      } else {
+        message.error(response.data.msg || '赎回失败')
+      }
+    } catch (error: any) {
+      message.error('赎回失败: ' + (error.message || '未知错误'))
+    } finally {
+      setRedeeming(false)
+    }
+  }
   
   // 订阅仓位推送
   const { connected: positionConnected } = useWebSocketSubscription<PositionPushMessage>(
@@ -227,6 +295,50 @@ const PositionList: React.FC = () => {
     if (isNaN(num)) return value
     return `${num >= 0 ? '+' : ''}${num.toFixed(2)}%`
   }
+
+  // 统计当前筛选后的仓位合计：开仓价值、当前价值、盈亏、已实现盈亏
+  const positionTotals = useMemo(() => {
+    if (filteredPositions.length === 0) {
+      return {
+        totalInitialValue: 0,
+        totalCurrentValue: 0,
+        totalPnl: 0,
+        totalRealizedPnl: 0
+      }
+    }
+
+    let totalInitialValue = 0
+    let totalCurrentValue = 0
+    let totalPnl = 0
+    let totalRealizedPnl = 0
+
+    filteredPositions.forEach((pos) => {
+      const initialValue = parseFloat(pos.initialValue || '0')
+      const currentValue = parseFloat(pos.currentValue || '0')
+      const pnl = parseFloat(pos.pnl || '0')
+      const realizedPnl = parseFloat(pos.realizedPnl || '0')
+
+      if (!isNaN(initialValue)) {
+        totalInitialValue += initialValue
+      }
+      if (!isNaN(currentValue)) {
+        totalCurrentValue += currentValue
+      }
+      if (!isNaN(pnl)) {
+        totalPnl += pnl
+      }
+      if (!isNaN(realizedPnl)) {
+        totalRealizedPnl += realizedPnl
+      }
+    })
+
+    return {
+      totalInitialValue,
+      totalCurrentValue,
+      totalPnl,
+      totalRealizedPnl
+    }
+  }, [filteredPositions])
 
   // 切换卡片展开/折叠状态
   const toggleCard = (cardKey: string) => {
@@ -519,6 +631,12 @@ const PositionList: React.FC = () => {
                           {formatNumber(position.avgPrice, 4)}
                         </span>
                       </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '13px', color: '#666' }}>开仓价值</span>
+                        <span style={{ fontSize: '13px', fontWeight: '500' }}>
+                          {formatNumber(position.initialValue, 2)} USDC
+                        </span>
+                      </div>
                       {positionFilter === 'current' && position.currentPrice && (
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -610,23 +728,15 @@ const PositionList: React.FC = () => {
                 {/* 操作按钮（移动端折叠时隐藏） */}
                 {positionFilter === 'current' && !shouldCollapse && (
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                    <Button 
-                      type="primary" 
-                      danger 
-                      size="small"
-                      block={isMobile}
-                      onClick={() => handleSellClick(position)}
-                    >
-                      卖出
-                    </Button>
-                    {position.redeemable && (
+                    {!position.redeemable && (
                       <Button 
-                        type="default" 
+                        type="primary" 
+                        danger 
                         size="small"
                         block={isMobile}
-                        onClick={() => message.info('赎回功能开发中')}
+                        onClick={() => handleSellClick(position)}
                       >
-                        赎回
+                        卖出
                       </Button>
                     )}
                   </div>
@@ -756,6 +866,18 @@ const PositionList: React.FC = () => {
       align: 'right' as const,
       width: 120
     },
+    {
+      title: '开仓价值',
+      dataIndex: 'initialValue',
+      key: 'initialValue',
+      render: (value: string) => (
+        <span>
+          {formatNumber(value, 2)} USDC
+        </span>
+      ),
+      align: 'right' as const,
+      width: 120
+    },
     ]
     
     // 只有当前仓位才显示当前价格和当前价值列
@@ -865,21 +987,14 @@ const PositionList: React.FC = () => {
         key: 'action',
         render: (_: any, record: AccountPosition) => (
           <Space size="small">
-            <Button 
-              type="primary" 
-              danger 
-              size="small"
-              onClick={() => handleSellClick(record)}
-            >
-              卖出
-            </Button>
-            {record.redeemable && (
+            {!record.redeemable && (
               <Button 
-                type="default" 
+                type="primary" 
+                danger 
                 size="small"
-                onClick={() => message.info('赎回功能开发中')}
+                onClick={() => handleSellClick(record)}
               >
-                赎回
+                卖出
               </Button>
             )}
           </Space>
@@ -982,90 +1097,160 @@ const PositionList: React.FC = () => {
               }))
             ]}
           />
-          <div style={{
-            background: '#f5f5f5',
-            padding: '4px',
-            borderRadius: '8px',
-            display: 'inline-flex',
-            gap: '4px'
-          }}>
-          <Radio.Group 
-            value={positionFilter} 
-            onChange={(e) => setPositionFilter(e.target.value)}
-            size={isMobile ? 'small' : 'middle'}
-              style={{ display: 'flex', gap: '4px' }}
-            >
-              <Radio.Button 
-                value="current"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{
+              background: '#f5f5f5',
+              padding: '4px',
+              borderRadius: '8px',
+              display: 'inline-flex',
+              gap: '4px'
+            }}>
+            <Radio.Group 
+              value={positionFilter} 
+              onChange={(e) => setPositionFilter(e.target.value)}
+              size={isMobile ? 'small' : 'middle'}
+                style={{ display: 'flex', gap: '4px' }}
+              >
+                <Radio.Button 
+                  value="current"
+                  style={{
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    height: 'auto',
+                    lineHeight: '1.5',
+                    transition: 'all 0.3s ease',
+                    background: positionFilter === 'current' ? '#1890ff' : 'transparent',
+                    color: positionFilter === 'current' ? '#fff' : '#666',
+                    fontWeight: positionFilter === 'current' ? '500' : 'normal',
+                    boxShadow: positionFilter === 'current' ? '0 2px 4px rgba(24, 144, 255, 0.2)' : 'none'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>当前仓位</span>
+                    <Tag 
+                      color={positionFilter === 'current' ? 'default' : 'blue'} 
+                      style={{ 
+                        margin: 0,
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        lineHeight: '20px',
+                        padding: '0 8px',
+                        background: positionFilter === 'current' ? 'rgba(255, 255, 255, 0.3)' : undefined,
+                        color: positionFilter === 'current' ? '#fff' : undefined,
+                        border: positionFilter === 'current' ? 'none' : undefined
+                      }}
+                    >
+                      {currentCount}
+                    </Tag>
+                  </span>
+              </Radio.Button>
+                <Radio.Button 
+                  value="historical"
+                  style={{
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    height: 'auto',
+                    lineHeight: '1.5',
+                    transition: 'all 0.3s ease',
+                    background: positionFilter === 'historical' ? '#1890ff' : 'transparent',
+                    color: positionFilter === 'historical' ? '#fff' : '#666',
+                    fontWeight: positionFilter === 'historical' ? '500' : 'normal',
+                    boxShadow: positionFilter === 'historical' ? '0 2px 4px rgba(24, 144, 255, 0.2)' : 'none'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>历史仓位</span>
+                    <Tag 
+                      color={positionFilter === 'historical' ? 'default' : 'default'} 
+                      style={{ 
+                        margin: 0,
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        lineHeight: '20px',
+                        padding: '0 8px',
+                        background: positionFilter === 'historical' ? 'rgba(255, 255, 255, 0.3)' : undefined,
+                        color: positionFilter === 'historical' ? '#fff' : undefined,
+                        border: positionFilter === 'historical' ? 'none' : undefined
+                      }}
+                    >
+                      {historicalCount}
+                    </Tag>
+                  </span>
+              </Radio.Button>
+            </Radio.Group>
+            </div>
+            {redeemableSummary && redeemableSummary.totalCount > 0 && (
+              <Button
+                type="primary"
+                onClick={handleRedeemClick}
+                loading={loadingRedeemableSummary}
                 style={{
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 16px',
-                  height: 'auto',
-                  lineHeight: '1.5',
-                  transition: 'all 0.3s ease',
-                  background: positionFilter === 'current' ? '#1890ff' : 'transparent',
-                  color: positionFilter === 'current' ? '#fff' : '#666',
-                  fontWeight: positionFilter === 'current' ? '500' : 'normal',
-                  boxShadow: positionFilter === 'current' ? '0 2px 4px rgba(24, 144, 255, 0.2)' : 'none'
+                  background: '#52c41a',
+                  borderColor: '#52c41a'
                 }}
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>当前仓位</span>
-                  <Tag 
-                    color={positionFilter === 'current' ? 'default' : 'blue'} 
-                    style={{ 
-                      margin: 0,
-                      borderRadius: '10px',
-                      fontSize: '12px',
-                      lineHeight: '20px',
-                      padding: '0 8px',
-                      background: positionFilter === 'current' ? 'rgba(255, 255, 255, 0.3)' : undefined,
-                      color: positionFilter === 'current' ? '#fff' : undefined,
-                      border: positionFilter === 'current' ? 'none' : undefined
-                    }}
-                  >
-                    {currentCount}
-                  </Tag>
-                </span>
-            </Radio.Button>
-              <Radio.Button 
-                value="historical"
-                style={{
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 16px',
-                  height: 'auto',
-                  lineHeight: '1.5',
-                  transition: 'all 0.3s ease',
-                  background: positionFilter === 'historical' ? '#1890ff' : 'transparent',
-                  color: positionFilter === 'historical' ? '#fff' : '#666',
-                  fontWeight: positionFilter === 'historical' ? '500' : 'normal',
-                  boxShadow: positionFilter === 'historical' ? '0 2px 4px rgba(24, 144, 255, 0.2)' : 'none'
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>历史仓位</span>
-                  <Tag 
-                    color={positionFilter === 'historical' ? 'default' : 'default'} 
-                    style={{ 
-                      margin: 0,
-                      borderRadius: '10px',
-                      fontSize: '12px',
-                      lineHeight: '20px',
-                      padding: '0 8px',
-                      background: positionFilter === 'historical' ? 'rgba(255, 255, 255, 0.3)' : undefined,
-                      color: positionFilter === 'historical' ? '#fff' : undefined,
-                      border: positionFilter === 'historical' ? 'none' : undefined
-                    }}
-                  >
-                    {historicalCount}
-                  </Tag>
-                </span>
-            </Radio.Button>
-          </Radio.Group>
+                赎回 ({redeemableSummary.totalCount}个, {formatNumber(redeemableSummary.totalValue, 2)} USDC)
+              </Button>
+            )}
           </div>
         </div>
+        {/* 合计信息：开仓价值、当前价值、盈亏、已实现盈亏（基于当前筛选后的仓位） */}
+        {filteredPositions.length > 0 && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '10px 16px',
+              borderRadius: '8px',
+              background: '#f5f5f5',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '16px',
+              fontSize: '13px',
+              color: '#555'
+            }}
+          >
+            <span>
+              开仓价值合计：{' '}
+              <span style={{ fontWeight: 600 }}>
+                {formatNumber(positionTotals.totalInitialValue.toString(), 2)} USDC
+              </span>
+            </span>
+            <span>
+              当前价值合计：{' '}
+              <span style={{ fontWeight: 600 }}>
+                {positionFilter === 'current'
+                  ? `${formatNumber(positionTotals.totalCurrentValue.toString(), 2)} USDC`
+                  : '-'}
+              </span>
+            </span>
+            <span>
+              盈亏合计：{' '}
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: positionTotals.totalPnl >= 0 ? '#3f8600' : '#cf1322'
+                }}
+              >
+                {positionTotals.totalPnl >= 0 ? '+' : ''}
+                {formatNumber(positionTotals.totalPnl.toString(), 2)} USDC
+              </span>
+            </span>
+            <span>
+              已实现盈亏合计：{' '}
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: positionTotals.totalRealizedPnl >= 0 ? '#3f8600' : '#cf1322'
+                }}
+              >
+                {positionTotals.totalRealizedPnl >= 0 ? '+' : ''}
+                {formatNumber(positionTotals.totalRealizedPnl.toString(), 2)} USDC
+              </span>
+            </span>
+          </div>
+        )}
       </div>
       
       {(isMobile || viewMode === 'card') ? (
@@ -1287,6 +1472,122 @@ const PositionList: React.FC = () => {
               </div>
             )}
           </Form>
+        )}
+      </Modal>
+      
+      {/* 赎回模态框 */}
+      <Modal
+        title="赎回仓位详情"
+        open={redeemModalVisible}
+        onCancel={() => {
+          if (!redeeming) {
+            setRedeemModalVisible(false)
+          }
+        }}
+        onOk={handleRedeemSubmit}
+        okText="确认赎回"
+        cancelText="取消"
+        width={isMobile ? '90%' : 800}
+        destroyOnClose
+        confirmLoading={redeeming}
+        maskClosable={!redeeming}
+      >
+        {redeemableSummary && redeemableSummary.positions.length > 0 ? (
+          <div>
+            <Descriptions bordered column={1} size="small" style={{ marginBottom: '16px' }}>
+              <Descriptions.Item label="可赎回仓位数量">
+                <Tag color="green">{redeemableSummary.totalCount} 个</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="可赎回总价值">
+                <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#52c41a' }}>
+                  {formatNumber(redeemableSummary.totalValue, 2)} USDC
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label="涉及账户">
+                <Tag color="blue">
+                  {new Set(redeemableSummary.positions.map(p => p.accountId)).size} 个账户
+                </Tag>
+              </Descriptions.Item>
+            </Descriptions>
+            
+            <div style={{ marginTop: '16px' }}>
+              <div style={{ marginBottom: '8px', fontWeight: '500' }}>赎回仓位列表：</div>
+              <Table
+                dataSource={redeemableSummary.positions}
+                rowKey={(record, index) => `${record.marketId}-${record.outcomeIndex}-${index}`}
+                pagination={false}
+                size="small"
+                scroll={{ y: 300 }}
+                columns={[
+                  {
+                    title: '账户',
+                    dataIndex: 'accountName',
+                    key: 'account',
+                    render: (text, record) => (
+                      <span>
+                        {text || `账户 ${record.accountId}`}
+                      </span>
+                    ),
+                    width: 150
+                  },
+                  {
+                    title: '市场',
+                    dataIndex: 'marketTitle',
+                    key: 'marketTitle',
+                    render: (text, record) => text || record.marketId.substring(0, 10) + '...',
+                    width: 200
+                  },
+                  {
+                    title: '方向',
+                    dataIndex: 'side',
+                    key: 'side',
+                    render: (side) => <Tag color={getSideColor(side)}>{side}</Tag>,
+                    width: 80
+                  },
+                  {
+                    title: '数量',
+                    dataIndex: 'quantity',
+                    key: 'quantity',
+                    align: 'right' as const,
+                    render: (value) => formatNumber(value, 4),
+                    width: 120
+                  },
+                  {
+                    title: '价值 (USDC)',
+                    dataIndex: 'value',
+                    key: 'value',
+                    align: 'right' as const,
+                    render: (value) => (
+                      <span style={{ fontWeight: '500', color: '#52c41a' }}>
+                        {formatNumber(value, 2)}
+                      </span>
+                    ),
+                    width: 120
+                  }
+                ]}
+              />
+            </div>
+            
+            <div style={{ 
+              marginTop: '16px', 
+              padding: '12px', 
+              background: '#f0f9ff', 
+              borderRadius: '8px',
+              border: '1px solid #bae7ff'
+            }}>
+              <div style={{ color: '#666', fontSize: '12px', lineHeight: '1.8' }}>
+                <div>💡 <strong>提示：</strong></div>
+                <div>• 赎回将按 1:1 比例将获胜仓位换回 USDC</div>
+                <div>• 同一市场的多个仓位将批量赎回，节省 Gas 费用</div>
+                <div>• 赎回操作需要发送链上交易，请确保账户有足够的 POL 支付 Gas</div>
+                <div>• 赎回成功后，仓位将从当前仓位列表中移除</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <Empty description="没有可赎回的仓位" />
+          </div>
         )}
       </Modal>
     </div>
