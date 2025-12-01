@@ -14,7 +14,6 @@ interface AccountStore {
   importAccount: (data: any) => Promise<void>
   updateAccount: (data: any) => Promise<void>
   deleteAccount: (accountId: number) => Promise<void>
-  setDefaultAccount: (accountId: number) => Promise<void>
   fetchAccountDetail: (accountId: number) => Promise<Account>
   fetchAccountBalance: (accountId: number) => Promise<{ 
     availableBalance: string
@@ -38,10 +37,9 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
         const accounts = response.data.data.list || []
         set({ accounts, loading: false })
         
-        // 设置默认账户为当前账户
-        const defaultAccount = accounts.find((a: Account) => a.isDefault)
-        if (defaultAccount) {
-          set({ currentAccount: defaultAccount })
+        // 如果没有当前账户，设置第一个账户为当前账户
+        if (accounts.length > 0 && !get().currentAccount) {
+          set({ currentAccount: accounts[0] })
         }
       } else {
         set({ error: response.data.msg || '获取账户列表失败', loading: false })
@@ -99,22 +97,6 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       }
     } catch (error: any) {
       set({ error: error.message || '删除账户失败', loading: false })
-      throw error
-    }
-  },
-  
-  setDefaultAccount: async (accountId) => {
-    set({ loading: true, error: null })
-    try {
-      const response = await apiService.accounts.setDefault({ accountId })
-      if (response.data.code === 0) {
-        await get().fetchAccounts()
-      } else {
-        set({ error: response.data.msg || '设置默认账户失败', loading: false })
-        throw new Error(response.data.msg || '设置默认账户失败')
-      }
-    } catch (error: any) {
-      set({ error: error.message || '设置默认账户失败', loading: false })
       throw error
     }
   },

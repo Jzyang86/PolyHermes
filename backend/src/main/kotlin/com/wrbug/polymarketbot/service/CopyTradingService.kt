@@ -18,7 +18,8 @@ class CopyTradingService(
     private val copyTradingRepository: CopyTradingRepository,
     private val accountRepository: AccountRepository,
     private val templateRepository: CopyTradingTemplateRepository,
-    private val leaderRepository: LeaderRepository
+    private val leaderRepository: LeaderRepository,
+    private val monitorService: CopyTradingMonitorService
 ) {
     
     private val logger = LoggerFactory.getLogger(CopyTradingService::class.java)
@@ -61,6 +62,17 @@ class CopyTradingService(
             
             val saved = copyTradingRepository.save(copyTrading)
             logger.info("成功创建跟单: ${saved.id}, account=${request.accountId}, template=${request.templateId}, leader=${request.leaderId}")
+            
+            // 如果跟单已启用，启动Leader监听
+            if (saved.enabled) {
+                kotlinx.coroutines.runBlocking {
+                    try {
+                        monitorService.addLeaderMonitoring(saved.leaderId)
+                    } catch (e: Exception) {
+                        logger.error("启动Leader监听失败: leaderId=${saved.leaderId}", e)
+                    }
+                }
+            }
             
             Result.success(toDto(saved, account, template, leader))
         } catch (e: Exception) {
@@ -152,6 +164,19 @@ class CopyTradingService(
             val saved = copyTradingRepository.save(updated)
             logger.info("成功更新跟单状态: ${saved.id}, enabled=${saved.enabled}")
             
+            // 更新监听状态
+            kotlinx.coroutines.runBlocking {
+                try {
+                    if (saved.enabled) {
+                        monitorService.addLeaderMonitoring(saved.leaderId)
+                    } else {
+                        monitorService.removeLeaderMonitoring(saved.leaderId)
+                    }
+                } catch (e: Exception) {
+                    logger.error("更新Leader监听状态失败: leaderId=${saved.leaderId}", e)
+                }
+            }
+            
             val account = accountRepository.findById(saved.accountId).orElse(null)
             val template = templateRepository.findById(saved.templateId).orElse(null)
             val leader = leaderRepository.findById(saved.leaderId).orElse(null)
@@ -176,8 +201,18 @@ class CopyTradingService(
             val copyTrading = copyTradingRepository.findById(copyTradingId).orElse(null)
                 ?: return Result.failure(IllegalArgumentException("跟单关系不存在"))
             
+            val leaderId = copyTrading.leaderId
             copyTradingRepository.delete(copyTrading)
             logger.info("成功删除跟单: $copyTradingId")
+            
+            // 移除监听（如果该Leader没有其他启用的跟单关系）
+            kotlinx.coroutines.runBlocking {
+                try {
+                    monitorService.removeLeaderMonitoring(leaderId)
+                } catch (e: Exception) {
+                    logger.error("移除Leader监听失败: leaderId=$leaderId", e)
+                }
+            }
             
             Result.success(Unit)
         } catch (e: Exception) {

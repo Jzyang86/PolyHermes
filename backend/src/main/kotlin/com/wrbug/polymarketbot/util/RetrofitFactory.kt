@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.wrbug.polymarketbot.api.EthereumRpcApi
 import com.wrbug.polymarketbot.api.PolymarketClobApi
+import com.wrbug.polymarketbot.api.PolymarketDataApi
 import com.wrbug.polymarketbot.api.PolymarketGammaApi
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -135,6 +136,31 @@ class RetrofitFactory(
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
             .create(PolymarketGammaApi::class.java)
+    }
+    
+    /**
+     * 创建 Polymarket Data API 客户端
+     * Data API 是公开 API，不需要认证
+     * @return PolymarketDataApi 客户端
+     */
+    fun createDataApi(): PolymarketDataApi {
+        val baseUrl = "https://data-api.polymarket.com"
+        val okHttpClient = createClient()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+        
+        // 创建 lenient 模式的 Gson
+        val gson = GsonBuilder()
+            .setLenient()
+            .create()
+        
+        return Retrofit.Builder()
+            .baseUrl("$baseUrl/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+            .create(PolymarketDataApi::class.java)
     }
 }
 

@@ -39,6 +39,25 @@ interface PolymarketDataApi {
         @Query("user") user: String,
         @Query("market") market: List<String>? = null
     ): Response<List<ValueResponse>>
+    
+    /**
+     * 获取用户活动（包括交易）
+     * 文档: https://docs.polymarket.com/api-reference/core/get-user-activity
+     */
+    @GET("/activity")
+    suspend fun getUserActivity(
+        @Query("user") user: String,
+        @Query("limit") limit: Int? = null,
+        @Query("offset") offset: Int? = null,
+        @Query("market") market: List<String>? = null,
+        @Query("eventId") eventId: List<Int>? = null,
+        @Query("type") type: List<String>? = null,
+        @Query("start") start: Long? = null,
+        @Query("end") end: Long? = null,
+        @Query("sortBy") sortBy: String? = null,
+        @Query("sortDirection") sortDirection: String? = null,
+        @Query("side") side: String? = null
+    ): Response<List<UserActivityResponse>>
 }
 
 /**
@@ -78,6 +97,34 @@ data class PositionResponse(
 data class ValueResponse(
     val user: String,
     val value: Double
+)
+
+/**
+ * 用户活动响应（根据 Polymarket Data API 文档）
+ * 文档: https://docs.polymarket.com/api-reference/core/get-user-activity
+ */
+data class UserActivityResponse(
+    val proxyWallet: String,
+    val timestamp: Long,
+    val conditionId: String,
+    val type: String,  // TRADE, SPLIT, MERGE, REDEEM, REWARD, CONVERSION
+    val size: Double? = null,
+    val usdcSize: Double? = null,
+    val transactionHash: String? = null,
+    val price: Double? = null,
+    val asset: String? = null,
+    val side: String? = null,  // BUY, SELL
+    val outcomeIndex: Int? = null,
+    val title: String? = null,
+    val slug: String? = null,
+    val icon: String? = null,
+    val eventSlug: String? = null,
+    val outcome: String? = null,
+    val name: String? = null,
+    val pseudonym: String? = null,
+    val bio: String? = null,
+    val profileImage: String? = null,
+    val profileImageOptimized: String? = null
 )
 
 

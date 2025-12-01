@@ -50,6 +50,11 @@ interface CopyTradingRepository : JpaRepository<CopyTrading, Long> {
     fun findByAccountIdAndEnabledTrue(accountId: Long): List<CopyTrading>
     
     /**
+     * 根据Leader ID查找启用的跟单
+     */
+    fun findByLeaderIdAndEnabledTrue(leaderId: Long): List<CopyTrading>
+    
+    /**
      * 统计使用指定模板的跟单数量
      */
     fun countByTemplateId(templateId: Long): Long

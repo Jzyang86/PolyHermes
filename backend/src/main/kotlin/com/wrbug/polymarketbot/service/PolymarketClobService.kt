@@ -340,6 +340,7 @@ class PolymarketClobService(
     
     /**
      * 获取交易记录
+     * 注意：CLOB API 不支持 limit 参数，需要通过 next_cursor 分页
      */
     suspend fun getTrades(
         id: String? = null,
@@ -348,7 +349,8 @@ class PolymarketClobService(
         asset_id: String? = null,
         before: String? = null,
         after: String? = null,
-        next_cursor: String? = null
+        next_cursor: String? = null,
+        limit: Int? = null  // 注意：CLOB API 不支持 limit，这里仅用于文档说明
     ): Result<List<TradeResponse>> {
         return try {
             val response = clobApi.getTrades(

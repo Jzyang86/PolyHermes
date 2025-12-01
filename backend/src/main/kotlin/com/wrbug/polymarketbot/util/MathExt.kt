@@ -72,7 +72,7 @@ fun Any?.gt(target: Any?): Boolean {
     val thisValue = this.toSafeBigDecimal()
     val targetValue = target.toSafeBigDecimal()
     // 使用 compareTo 方法比较，避免 BigDecimal 的 scale 问题
-    return thisValue.compareTo(targetValue) > 0
+    return thisValue > targetValue
 }
 
 /**
@@ -106,7 +106,7 @@ fun Any?.lt(target: Any?): Boolean {
     val thisValue = this.toSafeBigDecimal()
     val targetValue = target.toSafeBigDecimal()
     // 使用 compareTo 方法比较，避免 BigDecimal 的 scale 问题
-    return thisValue.compareTo(targetValue) < 0
+    return thisValue < targetValue
 }
 
 /**

@@ -391,6 +391,7 @@ class AccountService(
             AccountDto(
                 id = account.id!!,
                 walletAddress = account.walletAddress,
+                proxyAddress = account.proxyAddress,
                 accountName = account.accountName,
                 isDefault = account.isDefault,
                 isEnabled = account.isEnabled,
@@ -813,7 +814,7 @@ class AccountService(
             if (orderResponse.isSuccessful && orderResponse.body() != null) {
                 val response = orderResponse.body()!!
                 if (response.success) {
-                    logger.info("订单创建成功: orderId=${response.orderId}, orderHashes=${response.orderHashes}")
+                    logger.info("订单创建成功: orderId=${response.orderId}, transactionsHashes=${response.transactionsHashes}")
                     Result.success(
                         PositionSellResponse(
                             orderId = response.orderId ?: "",

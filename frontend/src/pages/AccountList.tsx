@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Table, Button, Space, Tag, Popconfirm, message, Typography, Spin, Modal, Descriptions, Divider, Form, Input, Checkbox, Alert } from 'antd'
-import { PlusOutlined, StarOutlined, StarFilled, ReloadOutlined, EditOutlined } from '@ant-design/icons'
+import { PlusOutlined, ReloadOutlined, EditOutlined, CopyOutlined } from '@ant-design/icons'
 import { useAccountStore } from '../store/accountStore'
 import type { Account } from '../types'
 import { useMediaQuery } from 'react-responsive'
@@ -12,7 +12,7 @@ const { Title } = Typography
 const AccountList: React.FC = () => {
   const navigate = useNavigate()
   const isMobile = useMediaQuery({ maxWidth: 768 })
-  const { accounts, loading, fetchAccounts, deleteAccount, setDefaultAccount, fetchAccountBalance, fetchAccountDetail, updateAccount } = useAccountStore()
+  const { accounts, loading, fetchAccounts, deleteAccount, fetchAccountBalance, fetchAccountDetail, updateAccount } = useAccountStore()
   const [balanceMap, setBalanceMap] = useState<Record<number, { total: string; available: string; position: string }>>({})
   const [balanceLoading, setBalanceLoading] = useState<Record<number, boolean>>({})
   const [detailModalVisible, setDetailModalVisible] = useState(false)
@@ -71,13 +71,12 @@ const AccountList: React.FC = () => {
     }
   }
   
-  const handleSetDefault = async (account: Account) => {
-    try {
-      await setDefaultAccount(account.id)
-      message.success('设置默认账户成功')
-    } catch (error: any) {
-      message.error(error.message || '设置默认账户失败')
-    }
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success(`${label}已复制到剪贴板`)
+    }).catch(() => {
+      message.error('复制失败')
+    })
   }
   
   const handleShowDetail = async (account: Account) => {
@@ -222,21 +221,34 @@ const AccountList: React.FC = () => {
       title: '钱包地址',
       dataIndex: 'walletAddress',
       key: 'walletAddress',
-      render: (address: string) => (
-        <span style={{ fontFamily: 'monospace' }}>{address}</span>
+      render: (text: string) => (
+        <Space>
+          <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{text}</span>
+          <Button
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => handleCopy(text, '钱包地址')}
+            title="复制钱包地址"
+          />
+        </Space>
       )
     },
     {
-      title: '默认账户',
-      dataIndex: 'isDefault',
-      key: 'isDefault',
-      render: (isDefault: boolean, record: Account) => (
-        <Button
-          type="text"
-          icon={isDefault ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
-          onClick={() => !isDefault && handleSetDefault(record)}
-          disabled={isDefault}
-        />
+      title: '代理钱包地址',
+      dataIndex: 'proxyAddress',
+      key: 'proxyAddress',
+      render: (address: string) => (
+        <Space>
+          <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{address}</span>
+          <Button
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => handleCopy(address, '代理钱包地址')}
+            title="复制代理钱包地址"
+          />
+        </Space>
       )
     },
     {
@@ -342,12 +354,28 @@ const AccountList: React.FC = () => {
               fontFamily: 'monospace',
               lineHeight: '1.4'
             }}>
-              {record.walletAddress}
+              <div style={{ marginBottom: '4px' }}>
+                <strong>钱包地址:</strong> {record.walletAddress}
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => handleCopy(record.walletAddress, '钱包地址')}
+                  style={{ marginLeft: '4px', padding: '0 4px' }}
+                />
+              </div>
+              <div>
+                <strong>代理钱包:</strong> {record.proxyAddress}
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => handleCopy(record.proxyAddress, '代理钱包地址')}
+                  style={{ marginLeft: '4px', padding: '0 4px' }}
+                />
+              </div>
             </div>
             <div style={{ marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              <Tag color={record.isDefault ? 'gold' : 'default'} style={{ margin: 0 }}>
-                {record.isDefault ? '默认' : '普通'}
-              </Tag>
               <Tag color={allConfigured ? 'success' : partialConfigured ? 'warning' : 'default'} style={{ margin: 0 }}>
                 {allConfigured ? '完整配置' : partialConfigured ? '部分配置' : '未配置'}
               </Tag>
@@ -414,17 +442,6 @@ const AccountList: React.FC = () => {
           >
             编辑
           </Button>
-          {!record.isDefault && (
-            <Button
-              size="small"
-              block
-              icon={<StarOutlined />}
-              onClick={() => handleSetDefault(record)}
-              style={{ minHeight: '32px' }}
-            >
-              设为默认
-            </Button>
-          )}
           <Popconfirm
             title="确定要删除这个账户吗？"
             description={
@@ -578,20 +595,44 @@ const AccountList: React.FC = () => {
                 {detailAccount.accountName || '-'}
               </Descriptions.Item>
               <Descriptions.Item label="钱包地址" span={isMobile ? 1 : 2}>
-                <span style={{ 
-                  fontFamily: 'monospace', 
-                  fontSize: isMobile ? '11px' : '13px',
-                  wordBreak: 'break-all',
-                  lineHeight: '1.4',
-                  display: 'block'
-                }}>
-                  {detailAccount.walletAddress || '-'}
-                </span>
+                <Space>
+                  <span style={{ 
+                    fontFamily: 'monospace', 
+                    fontSize: isMobile ? '11px' : '13px',
+                    wordBreak: 'break-all',
+                    lineHeight: '1.4',
+                    display: 'block'
+                  }}>
+                    {detailAccount.walletAddress || '-'}
+                  </span>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => handleCopy(detailAccount.walletAddress || '', '钱包地址')}
+                    title="复制钱包地址"
+                  />
+                </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="默认账户">
-                <Tag color={detailAccount.isDefault ? 'gold' : 'default'}>
-                  {detailAccount.isDefault ? '是' : '否'}
-                </Tag>
+              <Descriptions.Item label="代理钱包地址" span={isMobile ? 1 : 2}>
+                <Space>
+                  <span style={{ 
+                    fontFamily: 'monospace', 
+                    fontSize: isMobile ? '11px' : '13px',
+                    wordBreak: 'break-all',
+                    lineHeight: '1.4',
+                    display: 'block'
+                  }}>
+                    {detailAccount.proxyAddress || '-'}
+                  </span>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => handleCopy(detailAccount.proxyAddress || '', '代理钱包地址')}
+                    title="复制代理钱包地址"
+                  />
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="总余额" span={isMobile ? 1 : 2}>
                 {detailBalanceLoading ? (

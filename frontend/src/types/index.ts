@@ -13,8 +13,10 @@ export interface ApiResponse<T> {
 export interface Account {
   id: number
   walletAddress: string
+  proxyAddress: string  // Polymarket 代理钱包地址
   accountName?: string
   isDefault: boolean
+  isEnabled?: boolean  // 是否启用
   apiKeyConfigured: boolean
   apiSecretConfigured: boolean
   apiPassphraseConfigured: boolean

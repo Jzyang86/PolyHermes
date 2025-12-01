@@ -192,12 +192,22 @@ data class NewOrderRequest(
 
 /**
  * 创建订单响应（根据官方文档）
+ * 注意：API 返回的字段名是 orderID（大写），需要使用 @SerializedName 映射
  */
 data class NewOrderResponse(
     val success: Boolean,               // boolean indicating if server-side error
+    @SerializedName("errorMsg")
     val errorMsg: String? = null,       // error message in case of unsuccessful placement
-    val orderId: String? = null,        // id of order
-    val orderHashes: List<String>? = null // hash of settlement transaction order was marketable and triggered a match
+    @SerializedName("orderID")
+    val orderId: String? = null,        // id of order（API 返回字段名为 orderID）
+    @SerializedName("transactionsHashes")
+    val transactionsHashes: List<String>? = null,  // transaction hashes（API 返回字段名为 transactionsHashes）
+    @SerializedName("status")
+    val status: String? = null,         // order status (matched, pending, etc.)
+    @SerializedName("takingAmount")
+    val takingAmount: String? = null,   // taking amount
+    @SerializedName("makingAmount")
+    val makingAmount: String? = null    // making amount
 )
 
 /**
@@ -305,11 +315,13 @@ data class CancelOrdersBatchResponse(
 data class TradeResponse(
     val id: String,
     val market: String,
-    val side: String,
+    val side: String,  // BUY 或 SELL
     val price: String,
     val size: String,
-    val timestamp: String,  // ISO 8601 格式字符串
-    val user: String?
+    val timestamp: String,  // ISO 8601 格式字符串或时间戳
+    val user: String?,
+    val outcomeIndex: Int? = null,  // 结果索引（0=YES, 1=NO）
+    val outcome: String? = null    // 结果名称（如 "Up", "Down"）
 )
 
 /**

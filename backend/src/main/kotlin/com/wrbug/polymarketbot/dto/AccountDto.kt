@@ -55,6 +55,7 @@ data class SetDefaultAccountRequest(
 data class AccountDto(
     val id: Long,
     val walletAddress: String,
+    val proxyAddress: String,  // Polymarket 代理钱包地址
     val accountName: String?,
     val isDefault: Boolean,
     val isEnabled: Boolean,  // 是否启用（用于订单推送等功能的开关）
