@@ -62,13 +62,13 @@ class CopyTradingService(
             
             val saved = copyTradingRepository.save(copyTrading)
             
-            // 如果跟单已启用，启动Leader监听
+            // 如果跟单已启用，重新启动监听（确保状态完全同步）
             if (saved.enabled) {
                 kotlinx.coroutines.runBlocking {
                     try {
-                        monitorService.addLeaderMonitoring(saved.leaderId)
+                        monitorService.restartMonitoring()
                     } catch (e: Exception) {
-                        logger.error("启动Leader监听失败: leaderId=${saved.leaderId}", e)
+                        logger.error("重新启动跟单监听失败", e)
                     }
                 }
             }
@@ -195,15 +195,14 @@ class CopyTradingService(
             val copyTrading = copyTradingRepository.findById(copyTradingId).orElse(null)
                 ?: return Result.failure(IllegalArgumentException("跟单关系不存在"))
             
-            val leaderId = copyTrading.leaderId
             copyTradingRepository.delete(copyTrading)
             
-            // 移除监听（如果该Leader没有其他启用的跟单关系）
+            // 重新启动监听（确保状态完全同步）
             kotlinx.coroutines.runBlocking {
                 try {
-                    monitorService.removeLeaderMonitoring(leaderId)
+                    monitorService.restartMonitoring()
                 } catch (e: Exception) {
-                    logger.error("移除Leader监听失败: leaderId=$leaderId", e)
+                    logger.error("重新启动跟单监听失败", e)
                 }
             }
             
