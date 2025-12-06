@@ -305,15 +305,30 @@
     "footer": "Please use the above pages for configuration management."
   },
   "systemSettings": {
+    "title": "General Settings",
+    "language": {
+      "title": "Language Settings",
+      "currentLanguage": "Current Language",
+      "languageRequired": "Please select a language"
+    },
+    "notification": {
+      "title": "Notification Settings"
+    },
+    "relayer": {
+      "title": "Relayer Configuration"
+    },
+    "proxy": {
+      "title": "Proxy Settings"
+    },
     "autoRedeem": {
       "title": "Auto Redeem Configuration",
-      "label": "Auto Redeem",
-      "tooltip": "When enabled, the system will automatically redeem redeemable positions. Requires Builder API Key configuration to take effect",
+      "label": "Enable Auto Redeem",
+      "tooltip": "When enabled, the system will automatically redeem all redeemable positions in all accounts. Requires Builder API Key configuration to take effect.",
       "builderApiKeyNotConfigured": "Builder API Key Not Configured",
       "builderApiKeyNotConfiguredDesc": "Auto redeem feature requires Builder API Key configuration to take effect.",
       "goToConfigure": "Go to Configure",
-      "saveSuccess": "Auto redeem configuration updated",
-      "saveFailed": "Failed to update auto redeem configuration"
+      "saveSuccess": "Auto redeem configuration saved",
+      "saveFailed": "Failed to save auto redeem configuration"
     }
   },
   "builderApiKey": {
@@ -394,6 +409,9 @@
     "leaderName": "Leader Name",
     "walletAddress": "Wallet Address",
     "category": "Category",
+    "remark": "Remark",
+    "website": "Website",
+    "openWebsite": "Open Website",
     "all": "All",
     "copyTradingCount": "Copy Trading Count",
     "copyTradingRelations": "{{count}} copy trading relations",
@@ -404,6 +422,52 @@
     "deleteFailed": "Failed to delete Leader",
     "deleteConfirm": "Are you sure you want to delete this Leader?",
     "deleteConfirmDesc": "This Leader has {{count}} copy trading relations, please delete them first"
+  },
+  "leaderAdd": {
+    "title": "Add Leader",
+    "leaderAddress": "Leader Wallet Address",
+    "leaderAddressRequired": "Please enter Leader wallet address",
+    "leaderAddressInvalid": "Invalid wallet address format (must be a 42-character address starting with 0x)",
+    "leaderAddressTooltip": "The wallet address of the leader to be copied. The system will monitor transactions from this address and automatically copy trade",
+    "leaderName": "Leader Name",
+    "leaderNameTooltip": "Optional, used to identify the Leader for easier management",
+    "leaderNamePlaceholder": "Optional, used to identify the Leader",
+    "remark": "Leader Remark",
+    "remarkTooltip": "Optional, used to record remarks about the Leader",
+    "remarkPlaceholder": "Optional, used to record remarks about the Leader",
+    "website": "Leader Website",
+    "websiteTooltip": "Optional, Leader's website link",
+    "websitePlaceholder": "Optional, e.g.: https://example.com",
+    "websiteInvalid": "Please enter a valid URL address",
+    "category": "Category Filter",
+    "categoryTooltip": "Only copy trades of this category. Leave empty to copy all categories (sports or crypto)",
+    "categoryPlaceholder": "Select category (optional)",
+    "add": "Add Leader",
+    "cancel": "Cancel",
+    "addSuccess": "Leader added successfully",
+    "addFailed": "Failed to add Leader"
+  },
+  "leaderEdit": {
+    "title": "Edit Leader",
+    "leaderName": "Leader Name",
+    "leaderNameTooltip": "Optional, used to identify the Leader for easier management",
+    "leaderNamePlaceholder": "Optional, used to identify the Leader",
+    "remark": "Leader Remark",
+    "remarkTooltip": "Optional, used to record remarks about the Leader",
+    "remarkPlaceholder": "Optional, used to record remarks about the Leader",
+    "website": "Leader Website",
+    "websiteTooltip": "Optional, Leader's website link",
+    "websitePlaceholder": "Optional, e.g.: https://example.com",
+    "websiteInvalid": "Please enter a valid URL address",
+    "category": "Category Filter",
+    "categoryTooltip": "Only copy trades of this category. Leave empty to copy all categories (sports or crypto)",
+    "categoryPlaceholder": "Select category (optional)",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saveSuccess": "Leader updated successfully",
+    "saveFailed": "Failed to update Leader",
+    "fetchFailed": "Failed to get Leader details",
+    "invalidId": "Invalid Leader ID"
   },
   "userList": {
     "title": "User Management",

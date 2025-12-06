@@ -305,15 +305,30 @@
     "footer": "請使用上述頁面進行配置管理。"
   },
   "systemSettings": {
+    "title": "通用設置",
+    "language": {
+      "title": "多語言設置",
+      "currentLanguage": "當前語言",
+      "languageRequired": "請選擇語言"
+    },
+    "notification": {
+      "title": "消息推送設置"
+    },
+    "relayer": {
+      "title": "Relayer 配置"
+    },
+    "proxy": {
+      "title": "代理設置"
+    },
     "autoRedeem": {
       "title": "自動贖回配置",
-      "label": "自動贖回",
-      "tooltip": "開啟後，系統會自動贖回可贖回的倉位。需要配置 Builder API Key 才能生效",
+      "label": "啟用自動贖回",
+      "tooltip": "開啟後，系統將自動贖回所有賬戶中可贖回的倉位。需要配置 Builder API Key 才能生效。",
       "builderApiKeyNotConfigured": "Builder API Key 未配置",
       "builderApiKeyNotConfiguredDesc": "自動贖回功能需要配置 Builder API Key 才能生效。",
       "goToConfigure": "前往配置",
-      "saveSuccess": "自動贖回配置已更新",
-      "saveFailed": "更新自動贖回配置失敗"
+      "saveSuccess": "自動贖回配置已保存",
+      "saveFailed": "保存自動贖回配置失敗"
     }
   },
   "builderApiKey": {
@@ -394,6 +409,9 @@
     "leaderName": "Leader 名稱",
     "walletAddress": "錢包地址",
     "category": "分類",
+    "remark": "備註",
+    "website": "網站",
+    "openWebsite": "打開網頁",
     "all": "全部",
     "copyTradingCount": "跟單關係數",
     "copyTradingRelations": "{{count}} 個跟單關係",
@@ -404,6 +422,52 @@
     "deleteFailed": "刪除 Leader 失敗",
     "deleteConfirm": "確定要刪除這個 Leader 嗎？",
     "deleteConfirmDesc": "該 Leader 還有 {{count}} 個跟單關係，請先刪除跟單關係"
+  },
+  "leaderAdd": {
+    "title": "添加 Leader",
+    "leaderAddress": "Leader 錢包地址",
+    "leaderAddressRequired": "請輸入 Leader 錢包地址",
+    "leaderAddressInvalid": "錢包地址格式不正確（必須是 0x 開頭的 42 位地址）",
+    "leaderAddressTooltip": "被跟單者的錢包地址，系統將監控該地址的交易並自動跟單",
+    "leaderName": "Leader 名稱",
+    "leaderNameTooltip": "可選，用於標識 Leader，方便管理",
+    "leaderNamePlaceholder": "可選，用於標識 Leader",
+    "remark": "Leader 備註",
+    "remarkTooltip": "可選，用於記錄 Leader 的備註信息",
+    "remarkPlaceholder": "可選，用於記錄 Leader 的備註信息",
+    "website": "Leader 網站",
+    "websiteTooltip": "可選，Leader 的網站鏈接",
+    "websitePlaceholder": "可選，例如：https://example.com",
+    "websiteInvalid": "請輸入有效的 URL 地址",
+    "category": "分類篩選",
+    "categoryTooltip": "僅跟單該分類的交易，不選擇則跟單所有分類（sports 或 crypto）",
+    "categoryPlaceholder": "選擇分類（可選）",
+    "add": "添加 Leader",
+    "cancel": "取消",
+    "addSuccess": "添加 Leader 成功",
+    "addFailed": "添加 Leader 失敗"
+  },
+  "leaderEdit": {
+    "title": "編輯 Leader",
+    "leaderName": "Leader 名稱",
+    "leaderNameTooltip": "可選，用於標識 Leader，方便管理",
+    "leaderNamePlaceholder": "可選，用於標識 Leader",
+    "remark": "Leader 備註",
+    "remarkTooltip": "可選，用於記錄 Leader 的備註信息",
+    "remarkPlaceholder": "可選，用於記錄 Leader 的備註信息",
+    "website": "Leader 網站",
+    "websiteTooltip": "可選，Leader 的網站鏈接",
+    "websitePlaceholder": "可選，例如：https://example.com",
+    "websiteInvalid": "請輸入有效的 URL 地址",
+    "category": "分類篩選",
+    "categoryTooltip": "僅跟單該分類的交易，不選擇則跟單所有分類（sports 或 crypto）",
+    "categoryPlaceholder": "選擇分類（可選）",
+    "save": "保存",
+    "cancel": "取消",
+    "saveSuccess": "更新 Leader 成功",
+    "saveFailed": "更新 Leader 失敗",
+    "fetchFailed": "獲取 Leader 詳情失敗",
+    "invalidId": "Leader ID 無效"
   },
   "userList": {
     "title": "用戶管理",

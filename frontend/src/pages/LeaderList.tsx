@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Card, Table, Button, Space, Tag, Popconfirm, message, List, Empty, Spin, Divider } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Card, Table, Button, Space, Tag, Popconfirm, message, List, Empty, Spin, Divider, Typography } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, GlobalOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { apiService } from '../services/api'
 import type { Leader } from '../types'
 import { useMediaQuery } from 'react-responsive'
+
+const { Text } = Typography
 
 const LeaderList: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -74,6 +76,16 @@ const LeaderList: React.FC = () => {
       ) : <Tag>{t('leaderList.all') || '全部'}</Tag>
     },
     {
+      title: t('leaderList.remark') || '备注',
+      dataIndex: 'remark',
+      key: 'remark',
+      render: (remark: string | undefined) => remark ? (
+        <Text ellipsis={{ tooltip: remark }} style={{ maxWidth: isMobile ? 100 : 200 }}>
+          {remark}
+        </Text>
+      ) : <Text type="secondary">-</Text>
+    },
+    {
       title: t('leaderList.copyTradingCount') || '跟单关系数',
       dataIndex: 'copyTradingCount',
       key: 'copyTradingCount',
@@ -97,9 +109,19 @@ const LeaderList: React.FC = () => {
     {
       title: t('common.actions') || '操作',
       key: 'action',
-      width: isMobile ? 120 : 150,
+      width: isMobile ? 150 : 200,
       render: (_: any, record: Leader) => (
-        <Space size="small">
+        <Space size="small" wrap>
+          {record.website && (
+            <Button
+              type="link"
+              size="small"
+              icon={<GlobalOutlined />}
+              onClick={() => window.open(record.website, '_blank', 'noopener,noreferrer')}
+            >
+              {t('leaderList.openWebsite') || '打开网页'}
+            </Button>
+          )}
           <Button
             type="link"
             size="small"
@@ -199,6 +221,35 @@ const LeaderList: React.FC = () => {
                         </div>
                       </div>
                       
+                      {/* 备注 */}
+                      {leader.remark && (
+                        <div style={{ marginBottom: '12px' }}>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {t('leaderList.remark') || '备注'}：
+                          </Text>
+                          <Text style={{ fontSize: '12px', marginLeft: '4px' }}>
+                            {leader.remark}
+                          </Text>
+                        </div>
+                      )}
+                      
+                      {/* 网站 */}
+                      {leader.website && (
+                        <div style={{ marginBottom: '12px' }}>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {t('leaderList.website') || '网站'}：
+                          </Text>
+                          <a 
+                            href={leader.website} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ fontSize: '12px', marginLeft: '4px' }}
+                          >
+                            <LinkOutlined /> {leader.website}
+                          </a>
+                        </div>
+                      )}
+                      
                       <Divider style={{ margin: '12px 0' }} />
                       
                       {/* 分类和跟单关系数 */}
@@ -221,13 +272,24 @@ const LeaderList: React.FC = () => {
                       </div>
                       
                       {/* 操作按钮 */}
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {leader.website && (
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<GlobalOutlined />}
+                            onClick={() => window.open(leader.website, '_blank', 'noopener,noreferrer')}
+                            style={{ flex: 1, minWidth: '80px' }}
+                          >
+                            {t('leaderList.openWebsite') || '打开网页'}
+                          </Button>
+                        )}
                         <Button
                           type="link"
                           size="small"
                           icon={<EditOutlined />}
                           onClick={() => navigate(`/leaders/edit?id=${leader.id}`)}
-                          style={{ flex: 1 }}
+                          style={{ flex: 1, minWidth: '80px' }}
                         >
                           {t('common.edit') || '编辑'}
                         </Button>
@@ -243,7 +305,7 @@ const LeaderList: React.FC = () => {
                             size="small" 
                             danger 
                             icon={<DeleteOutlined />}
-                            style={{ flex: 1 }}
+                            style={{ flex: 1, minWidth: '80px' }}
                           >
                             {t('common.delete') || '删除'}
                           </Button>

@@ -17,10 +17,7 @@ import {
   SettingOutlined,
   GithubOutlined,
   TwitterOutlined,
-  GlobalOutlined,
-  CheckCircleOutlined,
-  NotificationOutlined,
-  KeyOutlined
+  CheckCircleOutlined
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import type { ReactNode } from 'react'
@@ -120,37 +117,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     {
       key: '/system-settings',
       icon: <SettingOutlined />,
-      label: t('menu.systemSettings'),
+      label: t('menu.systemSettings') || '系统管理',
       children: [
         {
           key: '/system-settings',
           icon: <SettingOutlined />,
-          label: t('menu.systemOverview') || '概览'
-        },
-        {
-          key: '/system-settings/language',
-          icon: <GlobalOutlined />,
-          label: t('menu.language')
+          label: t('menu.systemOverview') || '通用设置'
         },
         {
           key: '/system-settings/api-health',
           icon: <CheckCircleOutlined />,
-          label: t('menu.apiHealth')
-        },
-        {
-          key: '/system-settings/proxy',
-          icon: <LinkOutlined />,
-          label: t('menu.proxy')
-        },
-        {
-          key: '/system-settings/builder-api-key',
-          icon: <KeyOutlined />,
-          label: t('menu.builderApiKey') || 'Builder API Key'
-        },
-        {
-          key: '/system-settings/notifications',
-          icon: <NotificationOutlined />,
-          label: t('menu.notifications')
+          label: t('menu.apiHealth') || 'API健康'
         }
       ]
     },

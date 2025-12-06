@@ -424,12 +424,12 @@ class AccountController(
                                 )
                             } else {
                                 ResponseEntity.ok(
-                                    ApiResponse.error(
-                                        ErrorCode.BUSINESS_ERROR,
-                                        e.message,
-                                        messageSource
-                                    )
-                                )
+                            ApiResponse.error(
+                                ErrorCode.BUSINESS_ERROR,
+                                e.message,
+                                messageSource
+                            )
+                        )
                             }
                         }
 

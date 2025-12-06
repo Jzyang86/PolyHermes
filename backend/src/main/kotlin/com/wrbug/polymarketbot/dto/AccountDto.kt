@@ -36,7 +36,7 @@ data class SystemConfigDto(
     val builderApiKeyConfigured: Boolean,  // Builder API Key 是否已配置
     val builderSecretConfigured: Boolean,  // Builder Secret 是否已配置
     val builderPassphraseConfigured: Boolean,  // Builder Passphrase 是否已配置
-    val autoRedeem: Boolean = true  // 自动赎回（系统级别配置，默认开启）
+    val autoRedeemEnabled: Boolean = true  // 自动赎回（系统级别配置，默认开启）
 )
 
 /**

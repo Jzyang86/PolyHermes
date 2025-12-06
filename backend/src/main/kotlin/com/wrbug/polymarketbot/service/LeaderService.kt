@@ -49,10 +49,19 @@ class LeaderService(
             }
             
             // 5. 创建 Leader
+            // 如果 website 为空，自动设置为 polymarket profile 页
+            val website = if (request.website.isNullOrBlank()) {
+                "https://polymarket.com/profile/${request.leaderAddress}"
+            } else {
+                request.website
+            }
+            
             val leader = Leader(
                 leaderAddress = request.leaderAddress,
-                leaderName = request.leaderName,
-                category = request.category
+                leaderName = request.leaderName?.takeIf { it.isNotBlank() },
+                category = request.category,
+                remark = request.remark?.takeIf { it.isNotBlank() },
+                website = website
             )
             
             val saved = leaderRepository.save(leader)
@@ -78,9 +87,19 @@ class LeaderService(
                 CategoryValidator.validate(request.category)
             }
             
+            // 处理更新逻辑：如果请求中的字段为 null 或空字符串，都设置为 null
+            // 如果 website 为空，自动设置为 polymarket profile 页
+            val website = if (request.website.isNullOrBlank()) {
+                "https://polymarket.com/profile/${leader.leaderAddress}"
+            } else {
+                request.website
+            }
+            
             val updated = leader.copy(
-                leaderName = request.leaderName ?: leader.leaderName,
-                category = request.category ?: leader.category,
+                leaderName = request.leaderName?.takeIf { it.isNotBlank() },
+                category = request.category,
+                remark = request.remark?.takeIf { it.isNotBlank() },
+                website = website,
                 updatedAt = System.currentTimeMillis()
             )
             
@@ -175,6 +194,8 @@ class LeaderService(
             leaderAddress = leader.leaderAddress,
             leaderName = leader.leaderName,
             category = leader.category,
+            remark = leader.remark,
+            website = leader.website,
             copyTradingCount = copyTradingCount,
             createdAt = leader.createdAt,
             updatedAt = leader.updatedAt

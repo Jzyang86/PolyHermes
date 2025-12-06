@@ -4,12 +4,14 @@ import { Card, Form, Input, Button, Select, message, Typography, Space } from 'a
 import { ArrowLeftOutlined } from '@ant-design/icons'
 import { apiService } from '../services/api'
 import { useMediaQuery } from 'react-responsive'
+import { useTranslation } from 'react-i18next'
 import { isValidWalletAddress } from '../utils'
 
 const { Title } = Typography
 const { Option } = Select
 
 const LeaderAdd: React.FC = () => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const isMobile = useMediaQuery({ maxWidth: 768 })
   const [form] = Form.useForm()
@@ -21,17 +23,19 @@ const LeaderAdd: React.FC = () => {
       const response = await apiService.leaders.add({
         leaderAddress: values.leaderAddress.trim(),
         leaderName: values.leaderName?.trim() || undefined,
+        remark: values.remark?.trim() || undefined,
+        website: values.website?.trim() || undefined,
         category: values.category || undefined
       })
       
       if (response.data.code === 0) {
-        message.success('添加 Leader 成功')
+        message.success(t('leaderAdd.addSuccess') || '添加 Leader 成功')
         navigate('/leaders')
       } else {
-        message.error(response.data.msg || '添加 Leader 失败')
+        message.error(response.data.msg || t('leaderAdd.addFailed') || '添加 Leader 失败')
       }
     } catch (error: any) {
-      message.error(error.message || '添加 Leader 失败')
+      message.error(error.message || t('leaderAdd.addFailed') || '添加 Leader 失败')
     } finally {
       setLoading(false)
     }
@@ -47,7 +51,7 @@ const LeaderAdd: React.FC = () => {
         >
           返回
         </Button>
-        <Title level={2} style={{ margin: 0 }}>添加 Leader</Title>
+        <Title level={2} style={{ margin: 0 }}>{t('leaderAdd.title') || '添加 Leader'}</Title>
       </div>
       
       <Card>
@@ -61,41 +65,68 @@ const LeaderAdd: React.FC = () => {
           }}
         >
           <Form.Item
-            label="Leader 钱包地址"
+            label={t('leaderAdd.leaderAddress') || 'Leader 钱包地址'}
             name="leaderAddress"
             rules={[
-              { required: true, message: '请输入 Leader 钱包地址' },
+              { required: true, message: t('leaderAdd.leaderAddressRequired') || '请输入 Leader 钱包地址' },
               {
                 validator: (_, value) => {
                   if (!value) {
-                    return Promise.reject(new Error('请输入 Leader 钱包地址'))
+                    return Promise.reject(new Error(t('leaderAdd.leaderAddressRequired') || '请输入 Leader 钱包地址'))
                   }
                   if (!isValidWalletAddress(value.trim())) {
-                    return Promise.reject(new Error('钱包地址格式不正确（必须是 0x 开头的 42 位地址）'))
+                    return Promise.reject(new Error(t('leaderAdd.leaderAddressInvalid') || '钱包地址格式不正确（必须是 0x 开头的 42 位地址）'))
                   }
                   return Promise.resolve()
                 }
               }
             ]}
-            tooltip="被跟单者的钱包地址，系统将监控该地址的交易并自动跟单"
+            tooltip={t('leaderAdd.leaderAddressTooltip') || '被跟单者的钱包地址，系统将监控该地址的交易并自动跟单'}
           >
             <Input placeholder="0x..." style={{ fontFamily: 'monospace' }} />
           </Form.Item>
           
           <Form.Item
-            label="Leader 名称"
+            label={t('leaderAdd.leaderName') || 'Leader 名称'}
             name="leaderName"
-            tooltip="可选，用于标识 Leader，方便管理"
+            tooltip={t('leaderAdd.leaderNameTooltip') || '可选，用于标识 Leader，方便管理'}
           >
-            <Input placeholder="可选，用于标识 Leader" />
+            <Input placeholder={t('leaderAdd.leaderNamePlaceholder') || '可选，用于标识 Leader'} />
           </Form.Item>
           
           <Form.Item
-            label="分类筛选"
-            name="category"
-            tooltip="仅跟单该分类的交易，不选择则跟单所有分类（sports 或 crypto）"
+            label={t('leaderAdd.remark') || 'Leader 备注'}
+            name="remark"
+            tooltip={t('leaderAdd.remarkTooltip') || '可选，用于记录 Leader 的备注信息'}
           >
-            <Select placeholder="选择分类（可选）" allowClear>
+            <Input.TextArea 
+              placeholder={t('leaderAdd.remarkPlaceholder') || '可选，用于记录 Leader 的备注信息'} 
+              rows={3}
+              maxLength={500}
+              showCount
+            />
+          </Form.Item>
+          
+          <Form.Item
+            label={t('leaderAdd.website') || 'Leader 网站'}
+            name="website"
+            tooltip={t('leaderAdd.websiteTooltip') || '可选，Leader 的网站链接'}
+            rules={[
+              {
+                type: 'url',
+                message: t('leaderAdd.websiteInvalid') || '请输入有效的 URL 地址'
+              }
+            ]}
+          >
+            <Input placeholder={t('leaderAdd.websitePlaceholder') || '可选，例如：https://example.com'} />
+          </Form.Item>
+          
+          <Form.Item
+            label={t('leaderAdd.category') || '分类筛选'}
+            name="category"
+            tooltip={t('leaderAdd.categoryTooltip') || '仅跟单该分类的交易，不选择则跟单所有分类（sports 或 crypto）'}
+          >
+            <Select placeholder={t('leaderAdd.categoryPlaceholder') || '选择分类（可选）'} allowClear>
               <Option value="sports">Sports</Option>
               <Option value="crypto">Crypto</Option>
             </Select>
@@ -109,10 +140,10 @@ const LeaderAdd: React.FC = () => {
                 loading={loading}
                 size={isMobile ? 'middle' : 'large'}
               >
-                添加 Leader
+                {t('leaderAdd.add') || '添加 Leader'}
               </Button>
               <Button onClick={() => navigate('/leaders')}>
-                取消
+                {t('leaderAdd.cancel') || '取消'}
               </Button>
             </Space>
           </Form.Item>

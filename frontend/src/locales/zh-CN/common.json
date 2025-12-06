@@ -169,7 +169,10 @@
     "lastCheck": "最后检查",
     "healthy": "健康",
     "unhealthy": "不健康",
-    "unknown": "未知"
+    "unknown": "未知",
+    "normal": "正常",
+    "notConfigured": "未配置",
+    "abnormal": "异常"
   },
   "proxySettings": {
     "title": "代理设置",
@@ -217,15 +220,30 @@
     "footer": "请使用上述页面进行配置管理。"
   },
   "systemSettings": {
+    "title": "通用设置",
+    "language": {
+      "title": "多语言设置",
+      "currentLanguage": "当前语言",
+      "languageRequired": "请选择语言"
+    },
+    "notification": {
+      "title": "消息推送设置"
+    },
+    "relayer": {
+      "title": "Relayer 配置"
+    },
+    "proxy": {
+      "title": "代理设置"
+    },
     "autoRedeem": {
       "title": "自动赎回配置",
-      "label": "自动赎回",
-      "tooltip": "开启后，系统会自动赎回可赎回的仓位。需要配置 Builder API Key 才能生效",
+      "label": "启用自动赎回",
+      "tooltip": "开启后，系统将自动赎回所有账户中可赎回的仓位。需要配置 Builder API Key 才能生效。",
       "builderApiKeyNotConfigured": "Builder API Key 未配置",
       "builderApiKeyNotConfiguredDesc": "自动赎回功能需要配置 Builder API Key 才能生效。",
       "goToConfigure": "前往配置",
-      "saveSuccess": "自动赎回配置已更新",
-      "saveFailed": "更新自动赎回配置失败"
+      "saveSuccess": "自动赎回配置已保存",
+      "saveFailed": "保存自动赎回配置失败"
     }
   },
   "builderApiKey": {
@@ -306,6 +324,9 @@
     "leaderName": "Leader 名称",
     "walletAddress": "钱包地址",
     "category": "分类",
+    "remark": "备注",
+    "website": "网站",
+    "openWebsite": "打开网页",
     "all": "全部",
     "copyTradingCount": "跟单关系数",
     "copyTradingRelations": "{{count}} 个跟单关系",
@@ -316,6 +337,52 @@
     "deleteFailed": "删除 Leader 失败",
     "deleteConfirm": "确定要删除这个 Leader 吗？",
     "deleteConfirmDesc": "该 Leader 还有 {{count}} 个跟单关系，请先删除跟单关系"
+  },
+  "leaderAdd": {
+    "title": "添加 Leader",
+    "leaderAddress": "Leader 钱包地址",
+    "leaderAddressRequired": "请输入 Leader 钱包地址",
+    "leaderAddressInvalid": "钱包地址格式不正确（必须是 0x 开头的 42 位地址）",
+    "leaderAddressTooltip": "被跟单者的钱包地址，系统将监控该地址的交易并自动跟单",
+    "leaderName": "Leader 名称",
+    "leaderNameTooltip": "可选，用于标识 Leader，方便管理",
+    "leaderNamePlaceholder": "可选，用于标识 Leader",
+    "remark": "Leader 备注",
+    "remarkTooltip": "可选，用于记录 Leader 的备注信息",
+    "remarkPlaceholder": "可选，用于记录 Leader 的备注信息",
+    "website": "Leader 网站",
+    "websiteTooltip": "可选，Leader 的网站链接",
+    "websitePlaceholder": "可选，例如：https://example.com",
+    "websiteInvalid": "请输入有效的 URL 地址",
+    "category": "分类筛选",
+    "categoryTooltip": "仅跟单该分类的交易，不选择则跟单所有分类（sports 或 crypto）",
+    "categoryPlaceholder": "选择分类（可选）",
+    "add": "添加 Leader",
+    "cancel": "取消",
+    "addSuccess": "添加 Leader 成功",
+    "addFailed": "添加 Leader 失败"
+  },
+  "leaderEdit": {
+    "title": "编辑 Leader",
+    "leaderName": "Leader 名称",
+    "leaderNameTooltip": "可选，用于标识 Leader，方便管理",
+    "leaderNamePlaceholder": "可选，用于标识 Leader",
+    "remark": "Leader 备注",
+    "remarkTooltip": "可选，用于记录 Leader 的备注信息",
+    "remarkPlaceholder": "可选，用于记录 Leader 的备注信息",
+    "website": "Leader 网站",
+    "websiteTooltip": "可选，Leader 的网站链接",
+    "websitePlaceholder": "可选，例如：https://example.com",
+    "websiteInvalid": "请输入有效的 URL 地址",
+    "category": "分类筛选",
+    "categoryTooltip": "仅跟单该分类的交易，不选择则跟单所有分类（sports 或 crypto）",
+    "categoryPlaceholder": "选择分类（可选）",
+    "save": "保存",
+    "cancel": "取消",
+    "saveSuccess": "更新 Leader 成功",
+    "saveFailed": "更新 Leader 失败",
+    "fetchFailed": "获取 Leader 详情失败",
+    "invalidId": "Leader ID 无效"
   },
   "userList": {
     "title": "用户管理",

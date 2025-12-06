@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Card, Form, Button, Switch, Input, InputNumber, message, Typography, Space, Alert, Badge, Spin, Row, Col } from 'antd'
-import { SaveOutlined, CheckCircleOutlined, ReloadOutlined, GlobalOutlined, SettingOutlined } from '@ant-design/icons'
+import { Card, Form, Button, Switch, Input, InputNumber, message, Typography, Space, Alert, Select, Table, Tag, Popconfirm, Modal } from 'antd'
+import { SaveOutlined, CheckCircleOutlined, ReloadOutlined, GlobalOutlined, NotificationOutlined, KeyOutlined, LinkOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SendOutlined } from '@ant-design/icons'
 import { apiService } from '../services/api'
 import { useMediaQuery } from 'react-responsive'
 import { useTranslation } from 'react-i18next'
+import type { SystemConfig, BuilderApiKeyUpdateRequest, NotificationConfig, NotificationConfigRequest, NotificationConfigUpdateRequest } from '../types'
+import { TelegramConfigForm } from '../components/notifications'
 
-const { Title, Text } = Typography
+const { Title, Text, Paragraph } = Typography
 
 interface ProxyConfig {
   id?: number
@@ -24,53 +26,411 @@ interface ProxyCheckResponse {
   success: boolean
   message: string
   responseTime?: number
-  latency?: number  // 延迟（毫秒）
-}
-
-interface ApiHealthStatus {
-  name: string
-  url: string
-  status: string
-  message: string
-  responseTime?: number
+  latency?: number
 }
 
 const SystemSettings: React.FC = () => {
-  const { t } = useTranslation()
+  const { t, i18n: i18nInstance } = useTranslation()
   const isMobile = useMediaQuery({ maxWidth: 768 })
-  const [form] = Form.useForm()
+  
+  // 第一部分：多语言
+  const [languageForm] = Form.useForm()
+  const [currentLang, setCurrentLang] = useState<string>('auto')
+  
+  // 第二部分：消息推送设置
+  const [notificationConfigs, setNotificationConfigs] = useState<NotificationConfig[]>([])
+  const [notificationLoading, setNotificationLoading] = useState(false)
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false)
+  const [editingNotificationConfig, setEditingNotificationConfig] = useState<NotificationConfig | null>(null)
+  const [notificationForm] = Form.useForm()
+  const [testLoading, setTestLoading] = useState(false)
+  
+  // 第三部分：Relayer配置
+  const [relayerForm] = Form.useForm()
   const [autoRedeemForm] = Form.useForm()
-  const [loading, setLoading] = useState(false)
-  const [checking, setChecking] = useState(false)
-  const [checkResult, setCheckResult] = useState<ProxyCheckResponse | null>(null)
-  const [currentConfig, setCurrentConfig] = useState<ProxyConfig | null>(null)
-  const [apiHealthStatus, setApiHealthStatus] = useState<ApiHealthStatus[]>([])
-  const [checkingApiHealth, setCheckingApiHealth] = useState(false)
+  const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null)
+  const [relayerLoading, setRelayerLoading] = useState(false)
   const [autoRedeemLoading, setAutoRedeemLoading] = useState(false)
-  const [builderApiKeyConfigured, setBuilderApiKeyConfigured] = useState<boolean>(false)
+  
+  // 第四部分：代理设置
+  const [proxyForm] = Form.useForm()
+  const [proxyLoading, setProxyLoading] = useState(false)
+  const [proxyChecking, setProxyChecking] = useState(false)
+  const [proxyCheckResult, setProxyCheckResult] = useState<ProxyCheckResponse | null>(null)
+  const [currentProxyConfig, setCurrentProxyConfig] = useState<ProxyConfig | null>(null)
   
   useEffect(() => {
-    fetchConfig()
-    checkApiHealth()
+    // 初始化多语言设置
+    const savedLanguage = localStorage.getItem('i18n_language') || 'auto'
+    setCurrentLang(savedLanguage)
+    languageForm.setFieldsValue({ language: savedLanguage })
+    
+    // 加载其他配置
+    fetchNotificationConfigs()
     fetchSystemConfig()
+    fetchProxyConfig()
   }, [])
   
-  const fetchConfig = async () => {
+  // ==================== 第一部分：多语言 ====================
+  const detectSystemLanguage = (): string => {
+    const systemLanguage = navigator.language || navigator.languages?.[0] || 'en'
+    const lang = systemLanguage.toLowerCase()
+    if (lang.startsWith('zh')) {
+      if (lang.includes('tw') || lang.includes('hk') || lang.includes('mo')) {
+        return 'zh-TW'
+      }
+      return 'zh-CN'
+    }
+    return 'en'
+  }
+  
+  const handleLanguageSubmit = async (values: { language: string }) => {
+    try {
+      let actualLang = values.language
+      if (values.language === 'auto') {
+        actualLang = detectSystemLanguage()
+        localStorage.setItem('i18n_language', 'auto')
+      } else {
+        localStorage.setItem('i18n_language', values.language)
+      }
+      
+      setCurrentLang(values.language)
+      await i18nInstance.changeLanguage(actualLang)
+      message.success(t('languageSettings.changeSuccess') || '语言设置已保存')
+    } catch (error) {
+      message.error(t('languageSettings.changeFailed') || '语言设置保存失败')
+    }
+  }
+  
+  // ==================== 第二部分：消息推送设置 ====================
+  const fetchNotificationConfigs = async () => {
+    setNotificationLoading(true)
+    try {
+      const response = await apiService.notifications.list({ type: 'telegram' })
+      if (response.data.code === 0 && response.data.data) {
+        setNotificationConfigs(response.data.data)
+      } else {
+        message.error(response.data.msg || t('notificationSettings.fetchFailed'))
+      }
+    } catch (error: any) {
+      message.error(error.message || t('notificationSettings.fetchFailed'))
+    } finally {
+      setNotificationLoading(false)
+    }
+  }
+  
+  const handleNotificationCreate = () => {
+    setEditingNotificationConfig(null)
+    notificationForm.resetFields()
+    notificationForm.setFieldsValue({
+      type: 'telegram',
+      enabled: true,
+      config: {
+        botToken: '',
+        chatIds: []
+      }
+    })
+    setNotificationModalVisible(true)
+  }
+  
+  const handleNotificationEdit = (config: NotificationConfig) => {
+    setEditingNotificationConfig(config)
+    
+    let botToken = ''
+    let chatIds = ''
+    
+    if (config.config) {
+      if ('data' in config.config && config.config.data) {
+        const data = config.config.data as any
+        botToken = data.botToken || ''
+        if (data.chatIds) {
+          if (Array.isArray(data.chatIds)) {
+            chatIds = data.chatIds.join(',')
+          } else if (typeof data.chatIds === 'string') {
+            chatIds = data.chatIds
+          }
+        }
+      } else {
+        if ('botToken' in config.config) {
+          botToken = (config.config as any).botToken || ''
+        }
+        if ('chatIds' in config.config) {
+          const ids = (config.config as any).chatIds
+          if (Array.isArray(ids)) {
+            chatIds = ids.join(',')
+          } else if (typeof ids === 'string') {
+            chatIds = ids
+          }
+        }
+      }
+    }
+    
+    notificationForm.setFieldsValue({
+      type: config.type,
+      name: config.name,
+      enabled: config.enabled,
+      config: {
+        botToken: botToken,
+        chatIds: chatIds
+      }
+    })
+    setNotificationModalVisible(true)
+  }
+  
+  const handleNotificationDelete = async (id: number) => {
+    try {
+      const response = await apiService.notifications.delete({ id })
+      if (response.data.code === 0) {
+        message.success(t('notificationSettings.deleteSuccess'))
+        fetchNotificationConfigs()
+      } else {
+        message.error(response.data.msg || t('notificationSettings.deleteFailed'))
+      }
+    } catch (error: any) {
+      message.error(error.message || t('notificationSettings.deleteFailed'))
+    }
+  }
+  
+  const handleNotificationUpdateEnabled = async (id: number, enabled: boolean) => {
+    try {
+      const response = await apiService.notifications.updateEnabled({ id, enabled })
+      if (response.data.code === 0) {
+        message.success(enabled ? t('notificationSettings.enableSuccess') : t('notificationSettings.disableSuccess'))
+        fetchNotificationConfigs()
+      } else {
+        message.error(response.data.msg || t('notificationSettings.updateStatusFailed'))
+      }
+    } catch (error: any) {
+      message.error(error.message || t('notificationSettings.updateStatusFailed'))
+    }
+  }
+  
+  const handleNotificationTest = async () => {
+    setTestLoading(true)
+    try {
+      const response = await apiService.notifications.test({ message: '这是一条测试消息' })
+      if (response.data.code === 0 && response.data.data) {
+        message.success(t('notificationSettings.testSuccess'))
+      } else {
+        message.error(response.data.msg || t('notificationSettings.testFailed'))
+      }
+    } catch (error: any) {
+      message.error(error.message || t('notificationSettings.testFailed'))
+    } finally {
+      setTestLoading(false)
+    }
+  }
+  
+  const handleNotificationSubmit = async () => {
+    try {
+      const values = await notificationForm.validateFields()
+      
+      const chatIds = typeof values.config.chatIds === 'string' 
+        ? values.config.chatIds.split(',').map((id: string) => id.trim()).filter((id: string) => id)
+        : values.config.chatIds || []
+      
+      const configData: NotificationConfigRequest | NotificationConfigUpdateRequest = {
+        type: values.type,
+        name: values.name,
+        enabled: values.enabled,
+        config: {
+          botToken: values.config.botToken,
+          chatIds: chatIds
+        }
+      }
+      
+      if (editingNotificationConfig?.id) {
+        const updateData = {
+          ...configData,
+          id: editingNotificationConfig.id
+        } as NotificationConfigUpdateRequest
+        
+        const response = await apiService.notifications.update(updateData)
+        if (response.data.code === 0) {
+          message.success(t('notificationSettings.updateSuccess'))
+          setNotificationModalVisible(false)
+          fetchNotificationConfigs()
+        } else {
+          message.error(response.data.msg || t('notificationSettings.updateFailed'))
+        }
+      } else {
+        const response = await apiService.notifications.create(configData)
+        if (response.data.code === 0) {
+          message.success(t('notificationSettings.createSuccess'))
+          setNotificationModalVisible(false)
+          fetchNotificationConfigs()
+        } else {
+          message.error(response.data.msg || t('notificationSettings.createFailed'))
+        }
+      }
+    } catch (error: any) {
+      if (error.errorFields) {
+        return
+      }
+      message.error(error.message || t('message.error'))
+    }
+  }
+  
+  const notificationColumns = [
+    {
+      title: t('notificationSettings.configName'),
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: t('notificationSettings.type'),
+      dataIndex: 'type',
+      key: 'type',
+      render: (type: string) => <Tag color="blue">{type.toUpperCase()}</Tag>
+    },
+    {
+      title: t('notificationSettings.status'),
+      dataIndex: 'enabled',
+      key: 'enabled',
+      render: (enabled: boolean) => (
+        <Tag color={enabled ? 'green' : 'default'}>
+          {enabled ? t('notificationSettings.enabledStatus') : t('notificationSettings.disabledStatus')}
+        </Tag>
+      )
+    },
+    {
+      title: t('common.actions'),
+      key: 'action',
+      width: isMobile ? 120 : 200,
+      render: (_: any, record: NotificationConfig) => (
+        <Space size="small" wrap>
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleNotificationEdit(record)}
+          >
+            {t('notificationSettings.edit')}
+          </Button>
+          <Switch
+            checked={record.enabled}
+            size="small"
+            onChange={(checked) => handleNotificationUpdateEnabled(record.id!, checked)}
+          />
+          <Button
+            type="link"
+            size="small"
+            icon={<SendOutlined />}
+            loading={testLoading}
+            onClick={handleNotificationTest}
+          >
+            {t('notificationSettings.test')}
+          </Button>
+          <Popconfirm
+            title={t('notificationSettings.deleteConfirm')}
+            onConfirm={() => handleNotificationDelete(record.id!)}
+            okText={t('common.confirm')}
+            cancelText={t('common.cancel')}
+          >
+            <Button
+              type="link"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+            >
+              {t('notificationSettings.delete')}
+            </Button>
+          </Popconfirm>
+        </Space>
+      )
+    }
+  ]
+  
+  // ==================== 第三部分：Relayer配置 ====================
+  const fetchSystemConfig = async () => {
+    try {
+      const response = await apiService.systemConfig.get()
+      if (response.data.code === 0 && response.data.data) {
+        const config = response.data.data
+        setSystemConfig(config)
+        relayerForm.setFieldsValue({
+          builderApiKey: '',
+          builderSecret: '',
+          builderPassphrase: '',
+        })
+        autoRedeemForm.setFieldsValue({
+          autoRedeemEnabled: config.autoRedeemEnabled
+        })
+      }
+    } catch (error: any) {
+      console.error('获取系统配置失败:', error)
+    }
+  }
+  
+  const handleRelayerSubmit = async (values: BuilderApiKeyUpdateRequest) => {
+    setRelayerLoading(true)
+    try {
+      const updateData: BuilderApiKeyUpdateRequest = {}
+      if (values.builderApiKey && values.builderApiKey.trim()) {
+        updateData.builderApiKey = values.builderApiKey.trim()
+      }
+      if (values.builderSecret && values.builderSecret.trim()) {
+        updateData.builderSecret = values.builderSecret.trim()
+      }
+      if (values.builderPassphrase && values.builderPassphrase.trim()) {
+        updateData.builderPassphrase = values.builderPassphrase.trim()
+      }
+      
+      if (!updateData.builderApiKey && !updateData.builderSecret && !updateData.builderPassphrase) {
+        message.warning(t('builderApiKey.noChanges') || '没有需要更新的字段')
+        setRelayerLoading(false)
+        return
+      }
+      
+      const response = await apiService.systemConfig.updateBuilderApiKey(updateData)
+      if (response.data.code === 0) {
+        message.success(t('builderApiKey.saveSuccess'))
+        fetchSystemConfig()
+        relayerForm.resetFields()
+      } else {
+        message.error(response.data.msg || t('builderApiKey.saveFailed'))
+      }
+    } catch (error: any) {
+      message.error(error.message || t('builderApiKey.saveFailed'))
+    } finally {
+      setRelayerLoading(false)
+    }
+  }
+  
+  const handleAutoRedeemSubmit = async (values: { autoRedeemEnabled: boolean }) => {
+    setAutoRedeemLoading(true)
+    try {
+      const response = await apiService.systemConfig.updateAutoRedeem({ enabled: values.autoRedeemEnabled })
+      if (response.data.code === 0) {
+        message.success(t('systemSettings.autoRedeem.saveSuccess') || '自动赎回配置已保存')
+        fetchSystemConfig()
+      } else {
+        message.error(response.data.msg || t('systemSettings.autoRedeem.saveFailed') || '保存自动赎回配置失败')
+      }
+    } catch (error: any) {
+      message.error(error.message || t('systemSettings.autoRedeem.saveFailed') || '保存自动赎回配置失败')
+    } finally {
+      setAutoRedeemLoading(false)
+    }
+  }
+  
+  // ==================== 第四部分：代理设置 ====================
+  const fetchProxyConfig = async () => {
     try {
       const response = await apiService.proxyConfig.get()
       if (response.data.code === 0) {
         const data = response.data.data
-        setCurrentConfig(data)
+        setCurrentProxyConfig(data)
         if (data) {
-          form.setFieldsValue({
+          proxyForm.setFieldsValue({
             enabled: data.enabled,
             host: data.host || '',
             port: data.port || undefined,
             username: data.username || '',
-            password: '',  // 密码不预填充
+            password: '',
           })
         } else {
-          form.resetFields()
+          proxyForm.resetFields()
         }
       } else {
         message.error(response.data.msg || '获取代理配置失败')
@@ -80,42 +440,38 @@ const SystemSettings: React.FC = () => {
     }
   }
   
-  const handleSubmit = async (values: any) => {
-    setLoading(true)
+  const handleProxySubmit = async (values: any) => {
+    setProxyLoading(true)
     try {
       const response = await apiService.proxyConfig.saveHttp({
         enabled: values.enabled || false,
         host: values.host,
         port: values.port,
         username: values.username || undefined,
-        password: values.password || undefined,  // 如果密码为空，则不更新密码
+        password: values.password || undefined,
       })
       if (response.data.code === 0) {
         message.success('保存代理配置成功。新配置将立即生效，已建立的 WebSocket 连接需要重新连接才能使用新代理。')
-        fetchConfig()
-        setCheckResult(null)  // 清除检查结果
-        // 自动刷新 API 健康状态，验证新配置是否生效
-        setTimeout(() => {
-          checkApiHealth()
-        }, 1000)
+        fetchProxyConfig()
+        setProxyCheckResult(null)
       } else {
         message.error(response.data.msg || '保存代理配置失败')
       }
     } catch (error: any) {
       message.error(error.message || '保存代理配置失败')
     } finally {
-      setLoading(false)
+      setProxyLoading(false)
     }
   }
   
-  const handleCheck = async () => {
-    setChecking(true)
-    setCheckResult(null)
+  const handleProxyCheck = async () => {
+    setProxyChecking(true)
+    setProxyCheckResult(null)
     try {
       const response = await apiService.proxyConfig.check()
       if (response.data.code === 0 && response.data.data) {
         const result = response.data.data
-        setCheckResult(result)
+        setProxyCheckResult(result)
         if (result.success) {
           message.success(`代理检查成功：${result.message}${result.responseTime ? ` (响应时间: ${result.responseTime}ms)` : ''}`)
         } else {
@@ -127,208 +483,310 @@ const SystemSettings: React.FC = () => {
     } catch (error: any) {
       message.error(error.message || '代理检查失败')
     } finally {
-      setChecking(false)
-    }
-  }
-  
-  const checkApiHealth = async () => {
-    setCheckingApiHealth(true)
-    try {
-      const response = await apiService.proxyConfig.checkApiHealth()
-      if (response.data.code === 0 && response.data.data) {
-        setApiHealthStatus(response.data.data.apis)
-      } else {
-        message.error(response.data.msg || 'API 健康检查失败')
-      }
-    } catch (error: any) {
-      message.error(error.message || 'API 健康检查失败')
-    } finally {
-      setCheckingApiHealth(false)
-    }
-  }
-  
-  const getStatusColor = (status: string) => {
-    if (status === 'success') {
-      return '#52c41a'
-    } else if (status === 'skipped') {
-      return '#999'
-    } else {
-      return '#ff4d4f'
-    }
-  }
-  
-  const getStatusText = (status: string) => {
-    if (status === 'success') {
-      return '正常'
-    } else if (status === 'skipped') {
-      return '未配置'
-    } else {
-      return '异常'
-    }
-  }
-  
-  const fetchSystemConfig = async () => {
-    try {
-      const response = await apiService.systemConfig.get()
-      if (response.data.code === 0 && response.data.data) {
-        const config = response.data.data
-        setBuilderApiKeyConfigured(config.builderApiKeyConfigured)
-        autoRedeemForm.setFieldsValue({
-          autoRedeem: config.autoRedeem
-        })
-      }
-    } catch (error: any) {
-      console.error('获取系统配置失败:', error)
-    }
-  }
-  
-  const handleAutoRedeemSubmit = async (values: { autoRedeem: boolean }) => {
-    setAutoRedeemLoading(true)
-    try {
-      const response = await apiService.systemConfig.updateAutoRedeem({ enabled: values.autoRedeem })
-      if (response.data.code === 0) {
-        message.success(t('systemSettings.autoRedeem.saveSuccess') || '自动赎回配置已更新')
-        fetchSystemConfig()
-      } else {
-        message.error(response.data.msg || t('systemSettings.autoRedeem.saveFailed') || '更新自动赎回配置失败')
-      }
-    } catch (error: any) {
-      message.error(error.message || t('systemSettings.autoRedeem.saveFailed') || '更新自动赎回配置失败')
-    } finally {
-      setAutoRedeemLoading(false)
+      setProxyChecking(false)
     }
   }
   
   return (
     <div>
       <div style={{ marginBottom: '16px' }}>
-        <Title level={2} style={{ margin: 0 }}>系统管理</Title>
+        <Title level={2} style={{ margin: 0 }}>{t('systemSettings.title') || '通用设置'}</Title>
       </div>
       
+      {/* 第一部分：多语言 */}
       <Card 
         title={
           <Space>
             <GlobalOutlined />
-            <span>API 健康状态</span>
+            <span>{t('systemSettings.language.title') || '多语言设置'}</span>
+          </Space>
+        }
+        style={{ marginBottom: '16px' }}
+      >
+        <Form
+          form={languageForm}
+          layout="vertical"
+          onFinish={handleLanguageSubmit}
+          size={isMobile ? 'middle' : 'large'}
+          initialValues={{ language: currentLang }}
+        >
+          <Form.Item
+            label={t('systemSettings.language.currentLanguage') || '当前语言'}
+            name="language"
+            rules={[{ required: true, message: t('systemSettings.language.languageRequired') || '请选择语言' }]}
+          >
+            <Select
+              options={[
+                { value: 'auto', label: t('languageSettings.followSystem') || '跟随系统' },
+                { value: 'zh-CN', label: '简体中文' },
+                { value: 'zh-TW', label: '繁體中文' },
+                { value: 'en', label: 'English' }
+              ]}
+            />
+          </Form.Item>
+          {currentLang === 'auto' && (
+            <Form.Item>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                {t('languageSettings.currentSystemLanguage') || '当前系统语言'}: {
+                  detectSystemLanguage() === 'zh-CN' ? '简体中文' :
+                  detectSystemLanguage() === 'zh-TW' ? '繁體中文' : 'English'
+                }
+              </Text>
+            </Form.Item>
+          )}
+          <Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              icon={<SaveOutlined />}
+            >
+              {t('common.save') || '保存设置'}
+            </Button>
+          </Form.Item>
+        </Form>
+      </Card>
+      
+      {/* 第二部分：消息推送设置 */}
+      <Card 
+        title={
+          <Space>
+            <NotificationOutlined />
+            <span>{t('systemSettings.notification.title') || '消息推送设置'}</span>
           </Space>
         }
         style={{ marginBottom: '16px' }}
         extra={
           <Button
-            icon={<ReloadOutlined />}
-            onClick={checkApiHealth}
-            loading={checkingApiHealth}
-            size="small"
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleNotificationCreate}
           >
-            刷新
+            {t('notificationSettings.addConfig')}
           </Button>
         }
       >
-        <Spin spinning={checkingApiHealth}>
-          <Row gutter={[16, 16]}>
-            {apiHealthStatus.map((item, index) => (
-              <Col 
-                key={index}
-                xs={24} 
-                sm={12} 
-                md={12} 
-                lg={8} 
-                xl={6}
-              >
-                {isMobile ? (
-                  // 移动端：一行显示，只保留名称、延迟、状态点（不显示文字）
-                  <Card
-                    size="small"
-                    style={{
-                      borderLeft: `4px solid ${getStatusColor(item.status)}`,
-                    }}
-                    bodyStyle={{ padding: '12px' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                      <Text strong style={{ fontSize: '14px' }}>
-                        {item.name}
-                      </Text>
-                      <Space>
-                        {item.responseTime !== undefined && item.responseTime !== null && (
-                          <Text type="secondary" style={{ fontSize: '12px' }}>
-                            <Text strong style={{ color: '#1890ff' }}>{item.responseTime}ms</Text>
-                          </Text>
-                        )}
-                        <Badge 
-                          status={item.status === 'success' ? 'success' : item.status === 'skipped' ? 'default' : 'error'}
-                        />
-                      </Space>
-                    </div>
-                  </Card>
-                ) : (
-                  // 桌面端：保持原有卡片布局
-                  <Card
-                    size="small"
-                    style={{
-                      borderLeft: `4px solid ${getStatusColor(item.status)}`,
-                      height: '100%'
-                    }}
-                    bodyStyle={{ padding: '16px' }}
-                  >
-                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text strong style={{ fontSize: '14px' }}>
-                          {item.name}
-                        </Text>
-                        <Badge 
-                          status={item.status === 'success' ? 'success' : item.status === 'skipped' ? 'default' : 'error'} 
-                          text={getStatusText(item.status)}
-                        />
-                      </div>
-                      
-                      <div style={{ marginTop: '8px' }}>
-                        <Text type="secondary" style={{ fontSize: '12px', wordBreak: 'break-all' }}>
-                          {item.url}
-                        </Text>
-                      </div>
-                      
-                      {item.message && item.message !== '连接成功' && (
-                        <div style={{ marginTop: '8px' }}>
-                          <Text 
-                            type={item.status === 'success' ? 'success' : item.status === 'skipped' ? 'secondary' : 'danger'}
-                            style={{ fontSize: '13px' }}
-                          >
-                            {item.message}
-                          </Text>
-                        </div>
-                      )}
-                      
-                      {item.responseTime !== undefined && item.responseTime !== null && (
-                        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center' }}>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>
-                            延迟: <Text strong style={{ color: '#1890ff' }}>{item.responseTime}ms</Text>
-                          </Text>
-                        </div>
-                      )}
-                    </Space>
-                  </Card>
-                )}
-              </Col>
-            ))}
-          </Row>
-          
-          {apiHealthStatus.length === 0 && !checkingApiHealth && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>
-              <Text type="secondary">暂无 API 状态信息</Text>
-            </div>
-          )}
-        </Spin>
+        <Table
+          columns={notificationColumns}
+          dataSource={notificationConfigs}
+          loading={notificationLoading}
+          rowKey="id"
+          pagination={false}
+          scroll={{ x: isMobile ? 600 : 'auto' }}
+        />
+        
+        <Modal
+          title={editingNotificationConfig ? t('notificationSettings.editConfig') : t('notificationSettings.addConfig')}
+          open={notificationModalVisible}
+          onOk={handleNotificationSubmit}
+          onCancel={() => setNotificationModalVisible(false)}
+          width={isMobile ? '90%' : 600}
+          okText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+        >
+          <Form
+            form={notificationForm}
+            layout="vertical"
+          >
+            <Form.Item
+              name="type"
+              label={t('notificationSettings.type')}
+              rules={[{ required: true, message: t('notificationSettings.typeRequired') }]}
+            >
+              <Input disabled value="telegram" />
+            </Form.Item>
+            
+            <Form.Item
+              name="name"
+              label={t('notificationSettings.configName')}
+              rules={[{ required: true, message: t('notificationSettings.configNameRequired') }]}
+            >
+              <Input placeholder={t('notificationSettings.configNamePlaceholder')} />
+            </Form.Item>
+            
+            <Form.Item
+              name="enabled"
+              label={t('notificationSettings.enabled')}
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            
+            <Form.Item shouldUpdate={(prevValues, currentValues) => {
+              return prevValues.type !== currentValues.type || 
+                     prevValues.config !== currentValues.config
+            }}>
+              {() => {
+                const currentType = notificationForm.getFieldValue('type') || 'telegram'
+                if (currentType === 'telegram') {
+                  return <TelegramConfigForm form={notificationForm} />
+                }
+                return null
+              }}
+            </Form.Item>
+          </Form>
+        </Modal>
       </Card>
       
-      <Card title="代理设置" style={{ marginBottom: '16px' }}>
+      {/* 第三部分：Relayer配置 */}
+                  <Card
+        title={
+          <Space>
+            <KeyOutlined />
+            <span>{t('systemSettings.relayer.title') || 'Relayer 配置'}</span>
+          </Space>
+        }
+        style={{ marginBottom: '16px' }}
+      >
+        {/* Builder API Key 配置 */}
+        <div style={{ marginBottom: '24px' }}>
+          <Title level={4} style={{ marginBottom: '16px' }}>
+            {t('builderApiKey.title') || 'Builder API Key'}
+          </Title>
+          <Alert
+            message={t('builderApiKey.alertTitle')}
+            description={
+              <div>
+                <Paragraph style={{ marginBottom: '8px' }}>
+                  {t('builderApiKey.description')}
+                </Paragraph>
+                <Paragraph style={{ marginBottom: '8px' }}>
+                  <Text strong>{t('builderApiKey.purposeTitle')}</Text>
+                  <ul style={{ marginTop: '8px', marginBottom: 0, paddingLeft: '20px' }}>
+                    <li>{t('builderApiKey.purpose1')}</li>
+                    <li>{t('builderApiKey.purpose2')}</li>
+                    <li>{t('builderApiKey.purpose3')}</li>
+                  </ul>
+                </Paragraph>
+                <Paragraph style={{ marginBottom: 0 }}>
+                  <Text strong>{t('builderApiKey.getApiKey')}</Text>
+                  <Space style={{ marginLeft: '8px' }}>
+                    <a 
+                      href="https://polymarket.com/settings?tab=builder" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                    >
+                      <LinkOutlined /> {t('builderApiKey.openSettings')}
+                    </a>
+                      </Space>
+                </Paragraph>
+                    </div>
+            }
+            type="info"
+            showIcon
+            style={{ marginBottom: '16px' }}
+          />
+          
+          <Form
+            form={relayerForm}
+            layout="vertical"
+            onFinish={handleRelayerSubmit}
+            size={isMobile ? 'middle' : 'large'}
+          >
+            <Form.Item
+              label={t('builderApiKey.apiKey')}
+              name="builderApiKey"
+              help={systemConfig?.builderApiKeyConfigured ? t('builderApiKey.apiKeyHelp') : t('builderApiKey.apiKeyPlaceholder')}
+            >
+              <Input 
+                placeholder={systemConfig?.builderApiKeyConfigured ? t('builderApiKey.apiKeyHelp') : t('builderApiKey.apiKeyPlaceholder')}
+              />
+            </Form.Item>
+            
+            <Form.Item
+              label={t('builderApiKey.secret')}
+              name="builderSecret"
+              help={systemConfig?.builderSecretConfigured ? t('builderApiKey.secretHelp') : t('builderApiKey.secretPlaceholder')}
+            >
+              <Input 
+                placeholder={systemConfig?.builderSecretConfigured ? t('builderApiKey.secretHelp') : t('builderApiKey.secretPlaceholder')}
+              />
+            </Form.Item>
+            
+            <Form.Item
+              label={t('builderApiKey.passphrase')}
+              name="builderPassphrase"
+              help={systemConfig?.builderPassphraseConfigured ? t('builderApiKey.passphraseHelp') : t('builderApiKey.passphrasePlaceholder')}
+            >
+              <Input 
+                placeholder={systemConfig?.builderPassphraseConfigured ? t('builderApiKey.passphraseHelp') : t('builderApiKey.passphrasePlaceholder')}
+              />
+            </Form.Item>
+            
+            <Form.Item>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<SaveOutlined />}
+                loading={relayerLoading}
+              >
+                {t('common.save') || '保存配置'}
+              </Button>
+            </Form.Item>
+          </Form>
+                      </div>
+                      
+        {/* 自动赎回配置 */}
+        <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: '24px' }}>
+          <Title level={4} style={{ marginBottom: '16px' }}>
+            {t('systemSettings.autoRedeem.title') || '自动赎回'}
+          </Title>
+          <Form
+            form={autoRedeemForm}
+            layout="vertical"
+            onFinish={handleAutoRedeemSubmit}
+            size={isMobile ? 'middle' : 'large'}
+          >
+            <Form.Item
+              label={t('systemSettings.autoRedeem.label') || '启用自动赎回'}
+              name="autoRedeemEnabled"
+              tooltip={t('systemSettings.autoRedeem.tooltip') || '开启后，系统将自动赎回所有账户中可赎回的仓位。需要配置 Builder API Key 才能生效。'}
+              valuePropName="checked"
+            >
+              <Switch loading={autoRedeemLoading} />
+            </Form.Item>
+            
+            {!systemConfig?.builderApiKeyConfigured && (
+              <Alert
+                message={t('systemSettings.autoRedeem.builderApiKeyNotConfigured') || 'Builder API Key 未配置'}
+                description={t('systemSettings.autoRedeem.builderApiKeyNotConfiguredDesc') || '自动赎回功能需要配置 Builder API Key 才能生效。'}
+                type="warning"
+                showIcon
+                style={{ marginBottom: '16px' }}
+              />
+            )}
+            
+            <Form.Item>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<SaveOutlined />}
+                loading={autoRedeemLoading}
+              >
+                {t('common.save') || '保存配置'}
+              </Button>
+            </Form.Item>
+          </Form>
+            </div>
+      </Card>
+      
+      {/* 第四部分：代理设置 */}
+      <Card 
+        title={
+          <Space>
+            <LinkOutlined />
+            <span>{t('systemSettings.proxy.title') || '代理设置'}</span>
+          </Space>
+        }
+        style={{ marginBottom: '16px' }}
+      >
         <Form
-          form={form}
+          form={proxyForm}
           layout="vertical"
-          onFinish={handleSubmit}
+          onFinish={handleProxySubmit}
           size={isMobile ? 'middle' : 'large'}
         >
           <Form.Item
-            label="启用代理"
+            label={t('proxySettings.enabled') || '启用代理'}
             name="enabled"
             valuePropName="checked"
           >
@@ -336,45 +794,45 @@ const SystemSettings: React.FC = () => {
           </Form.Item>
           
           <Form.Item
-            label="代理主机"
+            label={t('proxySettings.host') || '代理主机'}
             name="host"
             rules={[
-              { required: true, message: '请输入代理主机地址' },
-              { pattern: /^[\w\.-]+$/, message: '请输入有效的主机地址' }
+              { required: true, message: t('proxySettings.hostRequired') || '请输入代理主机地址' },
+              { pattern: /^[\w\.-]+$/, message: t('proxySettings.hostInvalid') || '请输入有效的主机地址' }
             ]}
           >
-            <Input placeholder="例如：127.0.0.1 或 proxy.example.com" />
+            <Input placeholder={t('proxySettings.hostPlaceholder') || '例如：127.0.0.1 或 proxy.example.com'} />
           </Form.Item>
           
           <Form.Item
-            label="代理端口"
+            label={t('proxySettings.port') || '代理端口'}
             name="port"
             rules={[
-              { required: true, message: '请输入代理端口' },
-              { type: 'number', min: 1, max: 65535, message: '端口必须在 1-65535 之间' }
+              { required: true, message: t('proxySettings.portRequired') || '请输入代理端口' },
+              { type: 'number', min: 1, max: 65535, message: t('proxySettings.portInvalid') || '端口必须在 1-65535 之间' }
             ]}
           >
             <InputNumber
               min={1}
               max={65535}
               style={{ width: '100%' }}
-              placeholder="例如：8888"
+              placeholder={t('proxySettings.portPlaceholder') || '例如：8888'}
             />
           </Form.Item>
           
           <Form.Item
-            label="代理用户名（可选）"
+            label={t('proxySettings.username') || '代理用户名（可选）'}
             name="username"
           >
-            <Input placeholder="如果代理需要认证，请输入用户名" />
+            <Input placeholder={t('proxySettings.usernamePlaceholder') || '如果代理需要认证，请输入用户名'} />
           </Form.Item>
           
           <Form.Item
-            label="代理密码（可选）"
+            label={t('proxySettings.password') || '代理密码（可选）'}
             name="password"
-            help={currentConfig ? "留空则不更新密码，输入新密码则更新" : "如果代理需要认证，请输入密码"}
+            help={currentProxyConfig ? (t('proxySettings.passwordHelpUpdate') || '留空则不更新密码，输入新密码则更新') : (t('proxySettings.passwordHelp') || '如果代理需要认证，请输入密码')}
           >
-            <Input.Password placeholder={currentConfig ? "留空则不更新密码" : "如果代理需要认证，请输入密码"} />
+            <Input.Password placeholder={currentProxyConfig ? (t('proxySettings.passwordPlaceholderUpdate') || '留空则不更新密码') : (t('proxySettings.passwordPlaceholder') || '如果代理需要认证，请输入密码')} />
           </Form.Item>
           
           <Form.Item>
@@ -383,40 +841,40 @@ const SystemSettings: React.FC = () => {
                 type="primary"
                 htmlType="submit"
                 icon={<SaveOutlined />}
-                loading={loading}
+                loading={proxyLoading}
               >
-                保存配置
+                {t('common.save') || '保存配置'}
               </Button>
               <Button
                 icon={<CheckCircleOutlined />}
-                onClick={handleCheck}
-                loading={checking}
+                onClick={handleProxyCheck}
+                loading={proxyChecking}
               >
-                检查代理
+                {t('proxySettings.check') || '检查代理'}
               </Button>
-              {checkResult && (
+              {proxyCheckResult && (
                 <Button
                   icon={<ReloadOutlined />}
-                  onClick={fetchConfig}
+                  onClick={fetchProxyConfig}
                 >
-                  刷新配置
+                  {t('common.refresh') || '刷新配置'}
                 </Button>
               )}
             </Space>
           </Form.Item>
         </Form>
         
-        {checkResult && (
+        {proxyCheckResult && (
           <Alert
-            type={checkResult.success ? 'success' : 'error'}
-            message={checkResult.success ? '代理检查成功' : '代理检查失败'}
+            type={proxyCheckResult.success ? 'success' : 'error'}
+            message={proxyCheckResult.success ? (t('proxySettings.checkSuccess') || '代理检查成功') : (t('proxySettings.checkFailed') || '代理检查失败')}
             description={
               <div>
-                <Text>{checkResult.message}</Text>
-                {(checkResult.responseTime !== undefined || checkResult.latency !== undefined) && (
+                <Text>{proxyCheckResult.message}</Text>
+                {(proxyCheckResult.responseTime !== undefined || proxyCheckResult.latency !== undefined) && (
                   <div style={{ marginTop: '8px' }}>
                     <Text type="secondary">
-                      延迟: {(checkResult.latency ?? checkResult.responseTime) ?? 0}ms
+                      {t('proxySettings.latency') || '延迟'}: {(proxyCheckResult.latency ?? proxyCheckResult.responseTime) ?? 0}ms
                     </Text>
                   </div>
                 )}
@@ -427,68 +885,8 @@ const SystemSettings: React.FC = () => {
           />
         )}
       </Card>
-      
-      <Card 
-        title={
-          <Space>
-            <SettingOutlined />
-            <span>{t('systemSettings.autoRedeem.title') || '自动赎回配置'}</span>
-          </Space>
-        }
-        style={{ marginBottom: '16px' }}
-      >
-        <Form
-          form={autoRedeemForm}
-          layout="vertical"
-          onFinish={handleAutoRedeemSubmit}
-          size={isMobile ? 'middle' : 'large'}
-        >
-          <Form.Item
-            label={t('systemSettings.autoRedeem.label') || '自动赎回'}
-            name="autoRedeem"
-            tooltip={t('systemSettings.autoRedeem.tooltip') || '开启后，系统会自动赎回可赎回的仓位。需要配置 Builder API Key 才能生效'}
-            valuePropName="checked"
-          >
-            <Switch />
-          </Form.Item>
-          
-          {!builderApiKeyConfigured && (
-            <Alert
-              message={t('systemSettings.autoRedeem.builderApiKeyNotConfigured') || 'Builder API Key 未配置'}
-              description={
-                <span>
-                  {t('systemSettings.autoRedeem.builderApiKeyNotConfiguredDesc') || '自动赎回功能需要配置 Builder API Key 才能生效。'}
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() => window.location.href = '/system-settings/builder-api-key'}
-                    style={{ padding: 0, marginLeft: '8px' }}
-                  >
-                    {t('systemSettings.autoRedeem.goToConfigure') || '前往配置'}
-                  </Button>
-                </span>
-              }
-              type="warning"
-              showIcon
-              style={{ marginBottom: '16px' }}
-            />
-          )}
-          
-          <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<SaveOutlined />}
-              loading={autoRedeemLoading}
-            >
-              {t('common.save') || '保存配置'}
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
     </div>
   )
 }
 
 export default SystemSettings
-

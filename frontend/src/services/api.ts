@@ -285,13 +285,13 @@ export const apiService = {
     /**
      * 添加 Leader
      */
-    add: (data: { leaderAddress: string; leaderName?: string; category?: string }) => 
+    add: (data: { leaderAddress: string; leaderName?: string; remark?: string; website?: string; category?: string }) => 
       apiClient.post<ApiResponse<any>>('/copy-trading/leaders/add', data),
     
     /**
      * 更新 Leader
      */
-    update: (data: { leaderId: number; leaderName?: string; category?: string }) => 
+    update: (data: { leaderId: number; leaderName?: string; remark?: string; website?: string; category?: string }) => 
       apiClient.post<ApiResponse<any>>('/copy-trading/leaders/update', data),
     
     /**

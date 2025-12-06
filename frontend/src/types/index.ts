@@ -60,6 +60,8 @@ export interface Leader {
   leaderAddress: string
   leaderName?: string
   category?: string
+  remark?: string  // Leader 备注（可选）
+  website?: string  // Leader 网站（可选）
   copyTradingCount: number
   totalOrders?: number
   totalPnl?: string
@@ -772,7 +774,7 @@ export interface SystemConfig {
   builderApiKeyConfigured: boolean
   builderSecretConfigured: boolean
   builderPassphraseConfigured: boolean
-  autoRedeem: boolean  // 自动赎回（系统级别配置，默认开启）
+  autoRedeemEnabled: boolean  // 自动赎回（系统级别配置，默认开启）
 }
 
 /**

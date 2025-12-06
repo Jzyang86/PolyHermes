@@ -4,12 +4,14 @@ import { Card, Form, Input, Button, Select, message, Typography, Space, Spin } f
 import { ArrowLeftOutlined } from '@ant-design/icons'
 import { apiService } from '../services/api'
 import { useMediaQuery } from 'react-responsive'
+import { useTranslation } from 'react-i18next'
 import type { Leader } from '../types'
 
 const { Title } = Typography
 const { Option } = Select
 
 const LeaderEdit: React.FC = () => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const isMobile = useMediaQuery({ maxWidth: 768 })
@@ -22,7 +24,7 @@ const LeaderEdit: React.FC = () => {
     if (leaderId) {
       fetchLeaderDetail(parseInt(leaderId))
     } else {
-      message.error('Leader ID 无效')
+      message.error(t('leaderEdit.invalidId') || 'Leader ID 无效')
       navigate('/leaders')
     }
   }, [leaderId, navigate])
@@ -35,14 +37,16 @@ const LeaderEdit: React.FC = () => {
         const leader: Leader = response.data.data
         form.setFieldsValue({
           leaderName: leader.leaderName || '',
+          remark: leader.remark || '',
+          website: leader.website || '',
           category: leader.category || undefined
         })
       } else {
-        message.error(response.data.msg || '获取 Leader 详情失败')
+        message.error(response.data.msg || t('leaderEdit.fetchFailed') || '获取 Leader 详情失败')
         navigate('/leaders')
       }
     } catch (error: any) {
-      message.error(error.message || '获取 Leader 详情失败')
+      message.error(error.message || t('leaderEdit.fetchFailed') || '获取 Leader 详情失败')
       navigate('/leaders')
     } finally {
       setFetching(false)
@@ -51,7 +55,7 @@ const LeaderEdit: React.FC = () => {
   
   const handleSubmit = async (values: any) => {
     if (!leaderId) {
-      message.error('Leader ID 无效')
+      message.error(t('leaderEdit.invalidId') || 'Leader ID 无效')
       return
     }
     
@@ -60,17 +64,19 @@ const LeaderEdit: React.FC = () => {
       const response = await apiService.leaders.update({
         leaderId: parseInt(leaderId),
         leaderName: values.leaderName?.trim() || undefined,
+        remark: values.remark?.trim() || undefined,
+        website: values.website?.trim() || undefined,
         category: values.category || undefined
       })
       
       if (response.data.code === 0) {
-        message.success('更新 Leader 成功')
+        message.success(t('leaderEdit.saveSuccess') || '更新 Leader 成功')
         navigate('/leaders')
       } else {
-        message.error(response.data.msg || '更新 Leader 失败')
+        message.error(response.data.msg || t('leaderEdit.saveFailed') || '更新 Leader 失败')
       }
     } catch (error: any) {
-      message.error(error.message || '更新 Leader 失败')
+      message.error(error.message || t('leaderEdit.saveFailed') || '更新 Leader 失败')
     } finally {
       setLoading(false)
     }
@@ -94,7 +100,7 @@ const LeaderEdit: React.FC = () => {
         >
           返回
         </Button>
-        <Title level={2} style={{ margin: 0 }}>编辑 Leader</Title>
+        <Title level={2} style={{ margin: 0 }}>{t('leaderEdit.title') || '编辑 Leader'}</Title>
       </div>
       
       <Card>
@@ -105,19 +111,46 @@ const LeaderEdit: React.FC = () => {
           size={isMobile ? 'middle' : 'large'}
         >
           <Form.Item
-            label="Leader 名称"
+            label={t('leaderEdit.leaderName') || 'Leader 名称'}
             name="leaderName"
-            tooltip="可选，用于标识 Leader，方便管理"
+            tooltip={t('leaderEdit.leaderNameTooltip') || '可选，用于标识 Leader，方便管理'}
           >
-            <Input placeholder="可选，用于标识 Leader" />
+            <Input placeholder={t('leaderEdit.leaderNamePlaceholder') || '可选，用于标识 Leader'} />
           </Form.Item>
           
           <Form.Item
-            label="分类筛选"
-            name="category"
-            tooltip="仅跟单该分类的交易，不选择则跟单所有分类（sports 或 crypto）"
+            label={t('leaderEdit.remark') || 'Leader 备注'}
+            name="remark"
+            tooltip={t('leaderEdit.remarkTooltip') || '可选，用于记录 Leader 的备注信息'}
           >
-            <Select placeholder="选择分类（可选）" allowClear>
+            <Input.TextArea 
+              placeholder={t('leaderEdit.remarkPlaceholder') || '可选，用于记录 Leader 的备注信息'} 
+              rows={3}
+              maxLength={500}
+              showCount
+            />
+          </Form.Item>
+          
+          <Form.Item
+            label={t('leaderEdit.website') || 'Leader 网站'}
+            name="website"
+            tooltip={t('leaderEdit.websiteTooltip') || '可选，Leader 的网站链接'}
+            rules={[
+              {
+                type: 'url',
+                message: t('leaderEdit.websiteInvalid') || '请输入有效的 URL 地址'
+              }
+            ]}
+          >
+            <Input placeholder={t('leaderEdit.websitePlaceholder') || '可选，例如：https://example.com'} />
+          </Form.Item>
+          
+          <Form.Item
+            label={t('leaderEdit.category') || '分类筛选'}
+            name="category"
+            tooltip={t('leaderEdit.categoryTooltip') || '仅跟单该分类的交易，不选择则跟单所有分类（sports 或 crypto）'}
+          >
+            <Select placeholder={t('leaderEdit.categoryPlaceholder') || '选择分类（可选）'} allowClear>
               <Option value="sports">Sports</Option>
               <Option value="crypto">Crypto</Option>
             </Select>
@@ -131,10 +164,10 @@ const LeaderEdit: React.FC = () => {
                 loading={loading}
                 size={isMobile ? 'middle' : 'large'}
               >
-                保存
+                {t('leaderEdit.save') || '保存'}
               </Button>
               <Button onClick={() => navigate('/leaders')}>
-                取消
+                {t('leaderEdit.cancel') || '取消'}
               </Button>
             </Space>
           </Form.Item>

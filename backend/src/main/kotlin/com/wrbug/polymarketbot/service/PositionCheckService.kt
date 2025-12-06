@@ -3,13 +3,19 @@ package com.wrbug.polymarketbot.service
 import com.wrbug.polymarketbot.dto.AccountPositionDto
 import com.wrbug.polymarketbot.entity.CopyOrderTracking
 import com.wrbug.polymarketbot.entity.CopyTrading
+import com.wrbug.polymarketbot.entity.SellMatchDetail
+import com.wrbug.polymarketbot.entity.SellMatchRecord
 import com.wrbug.polymarketbot.repository.AccountRepository
 import com.wrbug.polymarketbot.repository.CopyOrderTrackingRepository
 import com.wrbug.polymarketbot.repository.CopyTradingRepository
+import com.wrbug.polymarketbot.repository.SellMatchDetailRepository
+import com.wrbug.polymarketbot.repository.SellMatchRecordRepository
 import com.wrbug.polymarketbot.util.toSafeBigDecimal
+import com.wrbug.polymarketbot.util.multi
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import jakarta.annotation.PostConstruct
+import jakarta.annotation.PreDestroy
 import org.springframework.context.MessageSource
 import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.stereotype.Service
@@ -19,12 +25,16 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 仓位检查服务
  * 负责检查待赎回仓位和未卖出订单，并执行相应的处理逻辑
+ * 订阅 PositionPollingService 的事件，处理仓位检查逻辑
  */
 @Service
 class PositionCheckService(
+    private val positionPollingService: PositionPollingService,
     private val accountService: AccountService,
     private val copyTradingRepository: CopyTradingRepository,
     private val copyOrderTrackingRepository: CopyOrderTrackingRepository,
+    private val sellMatchRecordRepository: SellMatchRecordRepository,
+    private val sellMatchDetailRepository: SellMatchDetailRepository,
     private val systemConfigService: SystemConfigService,
     private val relayClientService: RelayClientService,
     private val telegramNotificationService: TelegramNotificationService?,
@@ -34,8 +44,9 @@ class PositionCheckService(
     
     private val logger = LoggerFactory.getLogger(PositionCheckService::class.java)
     
-    // 协程作用域，用于缓存清理任务
+    // 协程作用域，用于订阅事件和缓存清理任务
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var subscriptionJob: Job? = null
     
     // 记录已发送通知的仓位（避免重复推送）
     private val notifiedRedeemablePositions = ConcurrentHashMap<String, Long>()  // "accountId_marketId_outcomeIndex" -> lastNotificationTime
@@ -43,12 +54,58 @@ class PositionCheckService(
     // 记录已发送提示的配置（避免重复推送）
     private val notifiedConfigs = ConcurrentHashMap<Long, Long>()  // accountId/copyTradingId -> lastNotificationTime
     
+    // 同步锁，确保订阅任务的启动和停止是线程安全的
+    private val lock = Any()
+    
     /**
-     * 初始化服务（启动缓存清理任务）
+     * 初始化服务（订阅 PositionPollingService 的事件，启动缓存清理任务）
      */
     @PostConstruct
     fun init() {
+        logger.info("PositionCheckService 初始化，订阅仓位轮训事件")
+        startSubscription()
         startCacheCleanup()
+    }
+    
+    /**
+     * 清理资源
+     */
+    @PreDestroy
+    fun destroy() {
+        synchronized(lock) {
+            subscriptionJob?.cancel()
+            subscriptionJob = null
+        }
+        scope.cancel()
+    }
+    
+    /**
+     * 启动订阅任务（订阅 PositionPollingService 的事件）
+     */
+    private fun startSubscription() {
+        synchronized(lock) {
+            // 如果已经有订阅任务在运行，先取消
+            subscriptionJob?.cancel()
+            
+            // 启动新的订阅任务（使用专门的线程，避免阻塞）
+            subscriptionJob = scope.launch(Dispatchers.IO) {
+                try {
+                    // 订阅仓位轮训事件
+                    positionPollingService.subscribe { positions ->
+                        // 在协程中处理仓位检查逻辑，避免阻塞
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                checkPositions(positions.currentPositions)
+                            } catch (e: Exception) {
+                                logger.error("处理仓位检查事件失败: ${e.message}", e)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.error("订阅仓位轮训事件失败: ${e.message}", e)
+                }
+            }
+        }
     }
     
     /**
@@ -118,16 +175,55 @@ class PositionCheckService(
     
     /**
      * 逻辑1：处理待赎回仓位
-     * 如果有待赎回的仓位，检查是否开启了自动赎回，是否有相同仓位的订单(未卖出的订单)
-     * 如果有的话，在仓位赎回成功后以该订单卖出逻辑更新所有订单状态(未卖出)
-     * 如果未开启自动赎回，则发送tg通知，并且记录（内存缓存）该仓位，避免重复发送
+     * 按照以下逻辑处理：
+     * 1. 无待赎回仓位：跳过
+     * 2. (未配置apikey || autoredeem==false) && 有待赎回的仓位：发送通知事件
+     * 3. (已配置) && 有待赎回的仓位：处理订单逻辑
      */
     private suspend fun checkRedeemablePositions(redeemablePositions: List<AccountPositionDto>) {
         try {
+            // 1. 无待赎回仓位：跳过
+            if (redeemablePositions.isEmpty()) {
+                return
+            }
+            
             // 检查系统级别的自动赎回配置
             val autoRedeemEnabled = systemConfigService.isAutoRedeemEnabled()
+            val apiKeyConfigured = relayClientService.isBuilderApiKeyConfigured()
             
-            // 按账户分组
+            // 2. (未配置apikey || autoredeem==false) && 有待赎回的仓位：发送通知事件
+            if (!autoRedeemEnabled || !apiKeyConfigured) {
+                // 按账户分组发送通知
+                val positionsByAccount = redeemablePositions.groupBy { it.accountId }
+                
+                for ((accountId, positions) in positionsByAccount) {
+                    for (position in positions) {
+                        val positionKey = "${accountId}_${position.marketId}_${position.outcomeIndex ?: 0}"
+                        // 检查是否在最近2小时内已发送过提示（避免频繁推送）
+                        val lastNotification = notifiedRedeemablePositions[positionKey]
+                        val now = System.currentTimeMillis()
+                        if (lastNotification == null || (now - lastNotification) >= 7200000) {  // 2小时
+                            if (!autoRedeemEnabled) {
+                                // 自动赎回未开启：直接发送通知，不需要查找跟单配置
+                                checkAndNotifyAutoRedeemDisabled(accountId, listOf(position))
+                            } else {
+                                // API Key 未配置：需要查找跟单配置来发送通知
+                                val copyTradings = copyTradingRepository.findByAccountId(accountId)
+                                    .filter { it.enabled }
+                                for (copyTrading in copyTradings) {
+                                    checkAndNotifyBuilderApiKeyNotConfigured(copyTrading, listOf(position))
+                                }
+                            }
+                            notifiedRedeemablePositions[positionKey] = now
+                        }
+                    }
+                }
+                return  // 未配置时直接返回，不进行后续处理
+            }
+            
+            // 3. (已配置) && 有待赎回的仓位：处理订单逻辑
+            // 自动赎回已开启且已配置 API Key，按账户分组进行赎回处理
+            // 先执行赎回，赎回成功后再查找订单并更新订单状态
             val positionsByAccount = redeemablePositions.groupBy { it.accountId }
             
             for ((accountId, positions) in positionsByAccount) {
@@ -139,90 +235,52 @@ class PositionCheckService(
                     continue
                 }
                 
-                // 收集所有有未卖出订单的仓位，按账户分组一次性处理
-                val positionsWithOrders = mutableListOf<Pair<AccountPositionDto, List<CopyOrderTracking>>>()
-                val positionsWithoutOrders = mutableListOf<AccountPositionDto>()
-                
-                for (position in positions) {
-                    // 查找相同仓位的未卖出订单（remaining_quantity > 0）
-                    val unmatchedOrders = mutableListOf<CopyOrderTracking>()
-                    for (copyTrading in copyTradings) {
-                        if (position.outcomeIndex != null) {
-                            val orders = copyOrderTrackingRepository.findUnmatchedBuyOrdersByOutcomeIndex(
-                                copyTrading.id!!,
-                                position.marketId,
-                                position.outcomeIndex
-                            )
-                            unmatchedOrders.addAll(orders)
-                        }
-                    }
-                    
-                    if (unmatchedOrders.isNotEmpty()) {
-                        positionsWithOrders.add(Pair(position, unmatchedOrders))
-                    } else {
-                        positionsWithoutOrders.add(position)
-                    }
-                }
-                
-                // 处理有未卖出订单的仓位
-                if (positionsWithOrders.isNotEmpty()) {
-                    if (autoRedeemEnabled && relayClientService.isBuilderApiKeyConfigured()) {
-                        // 开启自动赎回且已配置 API Key，执行自动赎回（一次性赎回该账户的所有可赎回仓位）
-                        val redeemRequest = com.wrbug.polymarketbot.dto.PositionRedeemRequest(
-                            positions = positionsWithOrders.map { (position, _) ->
-                                com.wrbug.polymarketbot.dto.AccountRedeemPositionItem(
-                                    accountId = accountId,
-                                    marketId = position.marketId,
-                                    outcomeIndex = position.outcomeIndex ?: 0,
-                                    side = position.side
-                                )
-                            }
+                // 先执行赎回（不查找订单）
+                val redeemRequest = com.wrbug.polymarketbot.dto.PositionRedeemRequest(
+                    positions = positions.map { position ->
+                        com.wrbug.polymarketbot.dto.AccountRedeemPositionItem(
+                            accountId = accountId,
+                            marketId = position.marketId,
+                            outcomeIndex = position.outcomeIndex ?: 0,
+                            side = position.side
                         )
+                    }
+                )
+                
+                val redeemResult = accountService.redeemPositions(redeemRequest)
+                redeemResult.fold(
+                    onSuccess = { response ->
+                        logger.info("自动赎回成功: accountId=$accountId, redeemedCount=${positions.size}, totalValue=${response.totalRedeemedValue}")
                         
-                        val redeemResult = accountService.redeemPositions(redeemRequest)
-                        redeemResult.fold(
-                            onSuccess = { response ->
-                                logger.info("自动赎回成功: accountId=$accountId, redeemedCount=${positionsWithOrders.size}, totalValue=${response.totalRedeemedValue}")
-                                // 在仓位赎回成功后，以该订单卖出逻辑更新所有订单状态（未卖出）
-                                for ((position, orders) in positionsWithOrders) {
-                                    updateOrdersAsSoldAfterRedeem(orders, position)
-                                }
-                            },
-                            onFailure = { e ->
-                                logger.error("自动赎回失败: accountId=$accountId, error=${e.message}", e)
-                            }
-                        )
-                    } else {
-                        // 未开启自动赎回或未配置 API Key，发送通知
-                        for ((position, _) in positionsWithOrders) {
-                            val positionKey = "${accountId}_${position.marketId}_${position.outcomeIndex ?: 0}"
-                            if (!autoRedeemEnabled) {
-                                checkAndNotifyAutoRedeemDisabled(accountId, listOf(position))
-                            } else {
-                                // API Key 未配置
-                                for (copyTrading in copyTradings) {
-                                    checkAndNotifyBuilderApiKeyNotConfigured(copyTrading, listOf(position))
+                        // 赎回成功后，再查找订单并更新订单状态
+                        for (position in positions) {
+                            // 查找相同仓位的未卖出订单（remaining_quantity > 0）
+                            val unmatchedOrders = mutableListOf<CopyOrderTracking>()
+                            for (copyTrading in copyTradings) {
+                                if (position.outcomeIndex != null) {
+                                    val orders = copyOrderTrackingRepository.findUnmatchedBuyOrdersByOutcomeIndex(
+                                        copyTrading.id!!,
+                                        position.marketId,
+                                        position.outcomeIndex
+                                    )
+                                    unmatchedOrders.addAll(orders)
                                 }
                             }
-                            // 记录已发送通知的仓位（避免重复发送）
-                            notifiedRedeemablePositions[positionKey] = System.currentTimeMillis()
+                            
+                            // 如果有未卖出订单，更新订单状态
+                            if (unmatchedOrders.isNotEmpty()) {
+                                // 从订单中获取 copyTradingId（所有订单应该有相同的 copyTradingId）
+                                val copyTradingId = unmatchedOrders.firstOrNull()?.copyTradingId
+                                if (copyTradingId != null) {
+                                    updateOrdersAsSoldAfterRedeem(unmatchedOrders, position, copyTradingId)
+                                }
+                            }
                         }
+                    },
+                    onFailure = { e ->
+                        logger.error("自动赎回失败: accountId=$accountId, error=${e.message}", e)
                     }
-                }
-                
-                // 处理没有未卖出订单的仓位（如果未开启自动赎回，发送通知）
-                if (positionsWithoutOrders.isNotEmpty() && !autoRedeemEnabled) {
-                    for (position in positionsWithoutOrders) {
-                        val positionKey = "${accountId}_${position.marketId}_${position.outcomeIndex ?: 0}"
-                        // 检查是否在最近2小时内已发送过提示（避免频繁推送）
-                        val lastNotification = notifiedRedeemablePositions[positionKey]
-                        val now = System.currentTimeMillis()
-                        if (lastNotification == null || (now - lastNotification) >= 7200000) {  // 2小时
-                            checkAndNotifyAutoRedeemDisabled(accountId, listOf(position))
-                            notifiedRedeemablePositions[positionKey] = now
-                        }
-                    }
-                }
+                )
             }
         } catch (e: Exception) {
             logger.error("处理待赎回仓位异常: ${e.message}", e)
@@ -274,17 +332,15 @@ class PositionCheckService(
                     if (position == null) {
                         // 仓位不存在，更新所有订单状态为已卖出
                         val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
-                        updateOrdersAsSold(orders, currentPrice)
+                        updateOrdersAsSold(orders, currentPrice, copyTrading.id!!, marketId, outcomeIndex)
                     } else {
-                        // 有仓位，检查仓位数量是否小于所有未卖出订单数量总和
+                        // 有仓位，按订单下单顺序（FIFO）更新状态
+                        // 如果仓位数量 >= 订单数量总和，所有订单完全成交
+                        // 如果仓位数量 < 订单数量总和，按FIFO顺序部分成交
                         val totalUnmatchedQuantity = orders.sumOf { it.remainingQuantity.toSafeBigDecimal() }
                         val positionQuantity = position.quantity.toSafeBigDecimal()
-                        
-                        if (positionQuantity < totalUnmatchedQuantity) {
-                            // 仓位数量小于订单数量总和，按订单下单顺序（FIFO）更新状态
-                            val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
-                            updateOrdersAsSoldByFIFO(orders, positionQuantity, currentPrice)
-                        }
+                        val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
+                        updateOrdersAsSoldByFIFO(orders, positionQuantity, currentPrice, copyTrading.id!!, marketId, outcomeIndex)
                     }
                 }
             }
@@ -320,11 +376,12 @@ class PositionCheckService(
      */
     private suspend fun updateOrdersAsSoldAfterRedeem(
         orders: List<CopyOrderTracking>,
-        position: AccountPositionDto
+        position: AccountPositionDto,
+        copyTradingId: Long
     ) {
         try {
             val currentPrice = getCurrentMarketPrice(position.marketId, position.outcomeIndex ?: 0)
-            updateOrdersAsSold(orders, currentPrice)
+            updateOrdersAsSold(orders, currentPrice, copyTradingId, position.marketId, position.outcomeIndex ?: 0)
         } catch (e: Exception) {
             logger.error("更新订单状态为已卖出失败: ${e.message}", e)
         }
@@ -332,21 +389,85 @@ class PositionCheckService(
     
     /**
      * 更新订单状态为已卖出（使用当前最新价）
+     * 同时创建卖出记录和匹配明细，用于统计
      */
     private suspend fun updateOrdersAsSold(
         orders: List<CopyOrderTracking>,
-        sellPrice: BigDecimal
+        sellPrice: BigDecimal,
+        copyTradingId: Long,
+        marketId: String,
+        outcomeIndex: Int
     ) {
+        if (orders.isEmpty()) {
+            return
+        }
+        
         try {
+            // 计算总匹配数量和总盈亏
+            var totalMatchedQuantity = BigDecimal.ZERO
+            var totalRealizedPnl = BigDecimal.ZERO
+            val matchDetails = mutableListOf<SellMatchDetail>()
+            
             for (order in orders) {
+                val remainingQty = order.remainingQuantity.toSafeBigDecimal()
+                if (remainingQty <= BigDecimal.ZERO) {
+                    continue
+                }
+                
+                // 计算盈亏
+                val buyPrice = order.price.toSafeBigDecimal()
+                val realizedPnl = sellPrice.subtract(buyPrice).multi(remainingQty)
+                
+                // 创建匹配明细（稍后保存）
+                val detail = SellMatchDetail(
+                    matchRecordId = 0,  // 稍后设置
+                    trackingId = order.id!!,
+                    buyOrderId = order.buyOrderId,
+                    matchedQuantity = remainingQty,
+                    buyPrice = buyPrice,
+                    sellPrice = sellPrice,
+                    realizedPnl = realizedPnl
+                )
+                matchDetails.add(detail)
+                
+                totalMatchedQuantity = totalMatchedQuantity.add(remainingQty)
+                totalRealizedPnl = totalRealizedPnl.add(realizedPnl)
+                
                 // 更新订单状态：将剩余数量标记为已匹配
-                order.matchedQuantity = order.matchedQuantity.add(order.remainingQuantity)
+                order.matchedQuantity = order.matchedQuantity.add(remainingQty)
                 order.remainingQuantity = BigDecimal.ZERO
                 order.status = "fully_matched"
                 order.updatedAt = System.currentTimeMillis()
                 copyOrderTrackingRepository.save(order)
+            }
+            
+            // 如果有匹配的订单，创建卖出记录
+            if (totalMatchedQuantity > BigDecimal.ZERO && matchDetails.isNotEmpty()) {
+                val timestamp = System.currentTimeMillis()
+                val sellOrderId = "AUTO_${timestamp}_${copyTradingId}"
+                val leaderSellTradeId = "AUTO_${timestamp}"
                 
-                logger.info("更新订单状态为已卖出: orderId=${order.buyOrderId}, marketId=${order.marketId}, sellPrice=$sellPrice")
+                val matchRecord = SellMatchRecord(
+                    copyTradingId = copyTradingId,
+                    sellOrderId = sellOrderId,
+                    leaderSellTradeId = leaderSellTradeId,
+                    marketId = marketId,
+                    side = outcomeIndex.toString(),  // 使用outcomeIndex作为side
+                    outcomeIndex = outcomeIndex,
+                    totalMatchedQuantity = totalMatchedQuantity,
+                    sellPrice = sellPrice,
+                    totalRealizedPnl = totalRealizedPnl
+                )
+                
+                val savedRecord = sellMatchRecordRepository.save(matchRecord)
+                
+                // 保存匹配明细
+                for (detail in matchDetails) {
+                    val savedDetail = detail.copy(matchRecordId = savedRecord.id!!)
+                    sellMatchDetailRepository.save(savedDetail)
+                }
+                
+                logger.info("创建自动卖出记录: copyTradingId=$copyTradingId, marketId=$marketId, totalMatched=$totalMatchedQuantity, totalPnl=$totalRealizedPnl")
             }
         } catch (e: Exception) {
             logger.error("更新订单状态为已卖出异常: ${e.message}", e)
@@ -356,15 +477,26 @@ class PositionCheckService(
     /**
      * 按 FIFO 顺序更新订单状态为已卖出
      * 仓位数量小于订单数量总和时，按订单下单顺序更新
+     * 同时创建卖出记录和匹配明细，用于统计
      */
     private suspend fun updateOrdersAsSoldByFIFO(
         orders: List<CopyOrderTracking>,
         availableQuantity: BigDecimal,
-        sellPrice: BigDecimal
+        sellPrice: BigDecimal,
+        copyTradingId: Long,
+        marketId: String,
+        outcomeIndex: Int
     ) {
+        if (orders.isEmpty()) {
+            return
+        }
+        
         try {
             // 订单已经按 createdAt ASC 排序（FIFO）
             var remaining = availableQuantity
+            var totalMatchedQuantity = BigDecimal.ZERO
+            var totalRealizedPnl = BigDecimal.ZERO
+            val matchDetails = mutableListOf<SellMatchDetail>()
             
             for (order in orders) {
                 if (remaining <= BigDecimal.ZERO) {
@@ -375,6 +507,25 @@ class PositionCheckService(
                 val toMatch = minOf(orderRemaining, remaining)
                 
                 if (toMatch > BigDecimal.ZERO) {
+                    // 计算盈亏
+                    val buyPrice = order.price.toSafeBigDecimal()
+                    val realizedPnl = sellPrice.subtract(buyPrice).multi(toMatch)
+                    
+                    // 创建匹配明细（稍后保存）
+                    val detail = SellMatchDetail(
+                        matchRecordId = 0,  // 稍后设置
+                        trackingId = order.id!!,
+                        buyOrderId = order.buyOrderId,
+                        matchedQuantity = toMatch,
+                        buyPrice = buyPrice,
+                        sellPrice = sellPrice,
+                        realizedPnl = realizedPnl
+                    )
+                    matchDetails.add(detail)
+                    
+                    totalMatchedQuantity = totalMatchedQuantity.add(toMatch)
+                    totalRealizedPnl = totalRealizedPnl.add(realizedPnl)
+                    
                     order.matchedQuantity = order.matchedQuantity.add(toMatch)
                     order.remainingQuantity = order.remainingQuantity.subtract(toMatch)
                     
@@ -392,6 +543,35 @@ class PositionCheckService(
                     
                     logger.info("按 FIFO 更新订单状态: orderId=${order.buyOrderId}, matched=$toMatch, remaining=${order.remainingQuantity}")
                 }
+            }
+            
+            // 如果有匹配的订单，创建卖出记录
+            if (totalMatchedQuantity > BigDecimal.ZERO && matchDetails.isNotEmpty()) {
+                val timestamp = System.currentTimeMillis()
+                val sellOrderId = "AUTO_FIFO_${timestamp}_${copyTradingId}"
+                val leaderSellTradeId = "AUTO_FIFO_${timestamp}"
+                
+                val matchRecord = SellMatchRecord(
+                    copyTradingId = copyTradingId,
+                    sellOrderId = sellOrderId,
+                    leaderSellTradeId = leaderSellTradeId,
+                    marketId = marketId,
+                    side = outcomeIndex.toString(),  // 使用outcomeIndex作为side
+                    outcomeIndex = outcomeIndex,
+                    totalMatchedQuantity = totalMatchedQuantity,
+                    sellPrice = sellPrice,
+                    totalRealizedPnl = totalRealizedPnl
+                )
+                
+                val savedRecord = sellMatchRecordRepository.save(matchRecord)
+                
+                // 保存匹配明细
+                for (detail in matchDetails) {
+                    val savedDetail = detail.copy(matchRecordId = savedRecord.id!!)
+                    sellMatchDetailRepository.save(savedDetail)
+                }
+                
+                logger.info("创建FIFO自动卖出记录: copyTradingId=$copyTradingId, marketId=$marketId, totalMatched=$totalMatchedQuantity, totalPnl=$totalRealizedPnl")
             }
         } catch (e: Exception) {
             logger.error("按 FIFO 更新订单状态异常: ${e.message}", e)

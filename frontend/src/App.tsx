@@ -31,11 +31,7 @@ import CopyTradingSellOrders from './pages/CopyTradingSellOrders'
 import CopyTradingMatchedOrders from './pages/CopyTradingMatchedOrders'
 import FilteredOrdersList from './pages/FilteredOrdersList'
 import SystemSettings from './pages/SystemSettings'
-import LanguageSettings from './pages/LanguageSettings'
 import ApiHealthStatus from './pages/ApiHealthStatus'
-import ProxySettings from './pages/ProxySettings'
-import NotificationSettings from './pages/NotificationSettings'
-import BuilderApiKeySettings from './pages/BuilderApiKeySettings'
 import { wsManager } from './services/websocket'
 import type { OrderPushMessage } from './types'
 import { apiService } from './services/api'
@@ -264,11 +260,7 @@ function App() {
           <Route path="/statistics" element={<ProtectedRoute><Statistics /></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute><UserList /></ProtectedRoute>} />
           <Route path="/system-settings" element={<ProtectedRoute><SystemSettings /></ProtectedRoute>} />
-          <Route path="/system-settings/language" element={<ProtectedRoute><LanguageSettings /></ProtectedRoute>} />
           <Route path="/system-settings/api-health" element={<ProtectedRoute><ApiHealthStatus /></ProtectedRoute>} />
-          <Route path="/system-settings/proxy" element={<ProtectedRoute><ProxySettings /></ProtectedRoute>} />
-          <Route path="/system-settings/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
-          <Route path="/system-settings/builder-api-key" element={<ProtectedRoute><BuilderApiKeySettings /></ProtectedRoute>} />
           
           {/* 默认重定向到登录页 */}
           <Route path="*" element={<Navigate to="/login" replace />} />
