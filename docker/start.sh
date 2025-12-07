@@ -4,6 +4,41 @@
 
 set -e
 
+# 默认值常量
+DEFAULT_JWT_SECRET="change-me-in-production"
+DEFAULT_ADMIN_RESET_KEY="change-me-in-production"
+
+# 检查安全配置
+check_security_config() {
+    local errors=0
+    
+    # 检查 JWT_SECRET
+    if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" = "$DEFAULT_JWT_SECRET" ]; then
+        echo "❌ 错误: JWT_SECRET 不能使用默认值 '${DEFAULT_JWT_SECRET}'"
+        echo "   请设置环境变量 JWT_SECRET 为安全的随机字符串"
+        errors=$((errors + 1))
+    fi
+    
+    # 检查 ADMIN_RESET_PASSWORD_KEY
+    if [ -z "$ADMIN_RESET_PASSWORD_KEY" ] || [ "$ADMIN_RESET_PASSWORD_KEY" = "$DEFAULT_ADMIN_RESET_KEY" ]; then
+        echo "❌ 错误: ADMIN_RESET_PASSWORD_KEY 不能使用默认值 '${DEFAULT_ADMIN_RESET_KEY}'"
+        echo "   请设置环境变量 ADMIN_RESET_PASSWORD_KEY 为安全的随机字符串"
+        errors=$((errors + 1))
+    fi
+    
+    if [ $errors -gt 0 ]; then
+        echo ""
+        echo "⚠️  安全配置检查失败，容器将不会启动"
+        echo "   请在 docker-compose.yml 或 .env 文件中设置正确的值"
+        exit 1
+    fi
+    
+    echo "✅ 安全配置检查通过"
+}
+
+# 执行安全配置检查
+check_security_config
+
 # 函数：清理进程
 cleanup() {
     echo "收到退出信号，清理进程..."

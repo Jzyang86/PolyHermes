@@ -5,6 +5,8 @@
 ## 目录
 
 - [一体化部署（推荐）](#一体化部署推荐)
+  - [使用 Docker Hub 镜像](#使用-docker-hub-镜像推荐生产环境首选)
+  - [使用外部 Nginx 反向代理](#使用外部-nginx-反向代理生产环境推荐)
 - [后端部署](#后端部署)
   - [Java 直接部署](#java-直接部署)
   - [Docker 部署](#docker-部署)
@@ -23,10 +25,89 @@
 
 ### 部署步骤
 
-1. **使用部署脚本（推荐）**
+1. **使用 Docker Hub 镜像（推荐，生产环境首选）**
+
+使用官方构建的 Docker 镜像，无需本地构建，快速部署。
+
+**方式 1：独立部署（无需 clone 代码，推荐生产环境）**
+
+适用于生产环境，无需下载项目代码，只需配置文件即可部署。
 
 ```bash
-# 在项目根目录
+# 1. 创建部署目录
+mkdir polyhermes && cd polyhermes
+
+# 2. 下载生产环境配置文件
+# 从 GitHub 下载 docker-compose.prod.yml 和 docker-compose.prod.env.example
+curl -O https://raw.githubusercontent.com/WrBug/PolyHermes/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/WrBug/PolyHermes/main/docker-compose.prod.env.example
+
+# 3. 创建配置文件
+cp docker-compose.prod.env.example .env
+
+# 4. 编辑 .env 文件，修改以下必需配置：
+#    - DB_PASSWORD: 数据库密码（建议使用强密码）
+#    - JWT_SECRET: JWT 密钥（使用 openssl rand -hex 64 生成）
+#    - ADMIN_RESET_PASSWORD_KEY: 管理员密码重置密钥（使用 openssl rand -hex 32 生成）
+#
+# 生成随机密钥示例：
+#   openssl rand -hex 64   # 用于 JWT_SECRET
+#   openssl rand -hex 32   # 用于 ADMIN_RESET_PASSWORD_KEY
+
+# 5. 启动服务
+docker-compose -f docker-compose.prod.yml up -d
+
+# 6. 查看日志
+docker-compose -f docker-compose.prod.yml logs -f
+
+# 7. 停止服务
+docker-compose -f docker-compose.prod.yml down
+```
+
+**方式 2：使用部署脚本（需要 clone 代码）**
+
+```bash
+# 如果已经 clone 了代码
+./deploy.sh --use-docker-hub
+```
+
+**方式 3：修改现有 docker-compose.yml**
+
+```bash
+# 1. 修改 docker-compose.yml
+#    取消注释：image: wrbug/polyhermes:latest
+#    注释掉 build 部分
+
+# 2. 创建 .env 文件（见下方环境配置）
+
+# 3. 启动服务
+docker-compose up -d
+```
+
+**优势**：
+- ✅ 无需本地构建，快速部署
+- ✅ 无需 clone 代码，只需配置文件即可部署
+- ✅ 使用官方构建的镜像，包含正确的版本号
+- ✅ 支持多架构（amd64、arm64），自动选择匹配的架构
+- ✅ 生产环境推荐方式
+
+**拉取特定版本**：
+
+```bash
+# 修改 docker-compose.prod.yml 中的镜像标签
+# image: wrbug/polyhermes:v1.0.0
+
+# 或使用环境变量
+export IMAGE_TAG=v1.0.0
+# 在 docker-compose.prod.yml 中使用: image: wrbug/polyhermes:${IMAGE_TAG:-latest}
+```
+
+2. **本地构建部署（开发环境）**
+
+适用于开发环境或需要自定义构建的场景。
+
+```bash
+# 使用部署脚本
 ./deploy.sh
 ```
 
@@ -36,7 +117,9 @@
 - 构建 Docker 镜像（包含前后端）
 - 启动服务（应用 + MySQL）
 
-2. **手动部署**
+**注意**：本地构建的版本号会显示为 `dev`。
+
+3. **手动部署**
 
 ```bash
 # 创建 .env 文件
@@ -62,7 +145,7 @@ docker-compose logs -f
 docker-compose down
 ```
 
-3. **访问应用**
+4. **访问应用**
 
 - 前端和后端统一访问：`http://localhost:80`
 - Nginx 自动处理：
@@ -87,6 +170,97 @@ Nginx (端口 80)
 - ✅ 统一端口，无需配置 CORS
 - ✅ 自动处理前后端路由
 - ✅ 生产环境就绪
+
+### 使用外部 Nginx 反向代理（生产环境推荐）
+
+在生产环境中，建议在 Docker 容器外部部署 Nginx 作为反向代理，用于：
+
+- **SSL/TLS 终止**：处理 HTTPS 请求
+- **域名绑定**：绑定自定义域名
+- **负载均衡**：支持多个后端实例
+- **更灵活的配置**：更细粒度的控制
+
+**部署架构**：
+
+```
+用户请求 (HTTPS)
+  ↓
+外部 Nginx (443) - SSL 终止
+  ↓
+Docker 容器 (80) - 内部 Nginx + 后端
+  ├─ /api/* → 后端服务 (localhost:8000)
+  ├─ /ws → 后端 WebSocket (localhost:8000)
+  └─ /* → 前端静态文件
+```
+
+**部署步骤**：
+
+1. **部署 Docker 容器**
+
+```bash
+# 使用 docker-compose.prod.yml 部署
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+2. **配置外部 Nginx**
+
+```bash
+# 1. 下载 Nginx 配置示例
+curl -O https://raw.githubusercontent.com/WrBug/PolyHermes/main/docs/nginx-reverse-proxy.conf
+
+# 2. 复制到 Nginx 配置目录
+sudo cp nginx-reverse-proxy.conf /etc/nginx/sites-available/polyhermes
+
+# 3. 编辑配置文件，修改域名和 SSL 证书路径
+sudo nano /etc/nginx/sites-available/polyhermes
+# 修改以下内容：
+#   - server_name: 改为你的域名
+#   - ssl_certificate: SSL 证书路径
+#   - ssl_certificate_key: SSL 私钥路径
+#   - upstream server: 如果 Docker 容器端口不是 80，需要修改
+
+# 4. 创建软链接
+sudo ln -s /etc/nginx/sites-available/polyhermes /etc/nginx/sites-enabled/
+
+# 5. 测试配置
+sudo nginx -t
+
+# 6. 重载配置
+sudo systemctl reload nginx
+```
+
+3. **配置 SSL 证书（使用 Let's Encrypt）**
+
+```bash
+# 安装 Certbot
+sudo apt-get update
+sudo apt-get install certbot python3-certbot-nginx
+
+# 获取 SSL 证书
+sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+
+# 证书会自动配置到 Nginx，并设置自动续期
+```
+
+4. **修改 Docker 端口映射（可选）**
+
+如果使用外部 Nginx，可以将 Docker 容器的端口改为内部端口，不对外暴露：
+
+```yaml
+# 在 docker-compose.prod.yml 中
+ports:
+  - "127.0.0.1:80:80"  # 只绑定到本地，不对外暴露
+```
+
+**Nginx 配置说明**：
+
+- 配置文件位置：`docs/nginx-reverse-proxy.conf`
+- 支持 HTTPS（SSL/TLS）
+- 支持 WebSocket 代理
+- 包含安全头设置
+- 支持负载均衡（可配置多个后端）
+
+详细配置示例请参考：[Nginx 反向代理配置](nginx-reverse-proxy.conf)
 
 ## 后端部署
 

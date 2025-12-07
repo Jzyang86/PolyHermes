@@ -89,8 +89,64 @@ EOF
     fi
 }
 
+# 检查安全配置
+check_security_config() {
+    # 默认值常量
+    DEFAULT_JWT_SECRET="change-me-in-production"
+    DEFAULT_ADMIN_RESET_KEY="change-me-in-production"
+    
+    # 从 .env 文件读取配置（如果存在）
+    local jwt_secret=""
+    local admin_reset_key=""
+    
+    if [ -f ".env" ]; then
+        # 从 .env 文件读取（使用 grep 和 sed 避免 source 可能的问题）
+        jwt_secret=$(grep "^JWT_SECRET=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || echo "")
+        admin_reset_key=$(grep "^ADMIN_RESET_PASSWORD_KEY=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || echo "")
+    fi
+    
+    # 如果环境变量已设置，优先使用环境变量
+    if [ -n "$JWT_SECRET" ]; then
+        jwt_secret="$JWT_SECRET"
+    fi
+    if [ -n "$ADMIN_RESET_PASSWORD_KEY" ]; then
+        admin_reset_key="$ADMIN_RESET_PASSWORD_KEY"
+    fi
+    
+    local errors=0
+    
+    # 检查 JWT_SECRET
+    if [ -z "$jwt_secret" ] || [ "$jwt_secret" = "$DEFAULT_JWT_SECRET" ]; then
+        error "JWT_SECRET 不能使用默认值 '${DEFAULT_JWT_SECRET}'"
+        error "请在 .env 文件中设置 JWT_SECRET 为安全的随机字符串"
+        errors=$((errors + 1))
+    fi
+    
+    # 检查 ADMIN_RESET_PASSWORD_KEY
+    if [ -z "$admin_reset_key" ] || [ "$admin_reset_key" = "$DEFAULT_ADMIN_RESET_KEY" ]; then
+        error "ADMIN_RESET_PASSWORD_KEY 不能使用默认值 '${DEFAULT_ADMIN_RESET_KEY}'"
+        error "请在 .env 文件中设置 ADMIN_RESET_PASSWORD_KEY 为安全的随机字符串"
+        errors=$((errors + 1))
+    fi
+    
+    if [ $errors -gt 0 ]; then
+        echo ""
+        error "安全配置检查失败，部署已取消"
+        echo ""
+        info "提示：可以使用以下命令生成随机密钥："
+        info "  openssl rand -hex 32  # 生成 32 字节的随机字符串（用于 ADMIN_RESET_PASSWORD_KEY）"
+        info "  openssl rand -hex 64  # 生成 64 字节的随机字符串（用于 JWT_SECRET）"
+        exit 1
+    fi
+    
+    info "安全配置检查通过"
+}
+
 # 构建并启动
 deploy() {
+    # 检查安全配置
+    check_security_config
+    
     # 检查是否使用 Docker Hub 镜像
     USE_DOCKER_HUB="${USE_DOCKER_HUB:-false}"
     

@@ -115,10 +115,75 @@
 
 **部署步骤**：
 
-1. **使用部署脚本（推荐）**
+1. **使用 Docker Hub 镜像（推荐，生产环境首选）**
+
+**方式 1：独立部署（无需 clone 代码，推荐）**
+
+适用于生产环境，无需下载项目代码，只需两个文件即可部署：
 
 ```bash
-# 在项目根目录
+# 1. 创建部署目录
+mkdir polyhermes && cd polyhermes
+
+# 2. 下载生产环境配置文件
+# 从 GitHub 下载 docker-compose.prod.yml 和 docker-compose.prod.env.example
+curl -O https://raw.githubusercontent.com/WrBug/PolyHermes/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/WrBug/PolyHermes/main/docker-compose.prod.env.example
+
+# 3. 创建配置文件
+cp docker-compose.prod.env.example .env
+
+# 4. 编辑 .env 文件，修改以下必需配置：
+#    - DB_PASSWORD: 数据库密码
+#    - JWT_SECRET: 使用 openssl rand -hex 64 生成
+#    - ADMIN_RESET_PASSWORD_KEY: 使用 openssl rand -hex 32 生成
+
+# 5. 启动服务
+docker-compose -f docker-compose.prod.yml up -d
+
+# 6. 查看日志
+docker-compose -f docker-compose.prod.yml logs -f
+
+# 7. 停止服务
+docker-compose -f docker-compose.prod.yml down
+```
+
+**方式 2：使用部署脚本（需要 clone 代码）**
+
+```bash
+# 如果已经 clone 了代码
+./deploy.sh --use-docker-hub
+```
+
+**方式 3：修改现有 docker-compose.yml**
+
+```bash
+# 1. 修改 docker-compose.yml，取消注释：
+#    image: wrbug/polyhermes:latest
+#    并注释掉 build 部分
+# 2. 创建 .env 文件（见下方）
+# 3. 启动服务
+docker-compose up -d
+```
+
+**优势**：
+- ✅ 无需本地构建，快速部署
+- ✅ 无需 clone 代码，只需配置文件即可部署
+- ✅ 使用官方构建的镜像，包含正确的版本号
+- ✅ 支持多架构（amd64、arm64），自动选择匹配的架构
+- ✅ 生产环境推荐方式
+
+**拉取特定版本**：
+
+```bash
+# 修改 docker-compose.prod.yml 中的镜像标签
+# image: wrbug/polyhermes:v1.0.0
+```
+
+2. **本地构建部署（开发环境）**
+
+```bash
+# 使用部署脚本
 ./deploy.sh
 ```
 
@@ -128,7 +193,7 @@
 - 构建 Docker 镜像（包含前后端）
 - 启动服务（应用 + MySQL）
 
-2. **手动部署**
+3. **手动部署**
 
 ```bash
 # 创建 .env 文件
@@ -154,22 +219,18 @@ docker-compose logs -f
 docker-compose down
 ```
 
-3. **使用 Docker Hub 镜像（生产环境推荐）**
-
-```bash
-# 使用部署脚本
-./deploy.sh --use-docker-hub
-
-# 或修改 docker-compose.yml，取消注释：
-# image: wrbug/polyhermes:latest
-```
-
 **访问应用**：
 - 前端和后端统一访问：`http://localhost:80`
 - Nginx 自动处理：
   - `/api/*` → 后端 API（`localhost:8000`）
   - `/ws` → 后端 WebSocket（`localhost:8000`）
   - 其他路径 → 前端静态文件
+
+**使用外部 Nginx 反向代理（生产环境推荐）**：
+
+在生产环境中，建议在 Docker 容器外部部署 Nginx 作为反向代理，用于 SSL/TLS 终止、域名绑定等。
+
+详细配置请参考：[部署文档 - Nginx 反向代理](docs/DEPLOYMENT.md#使用外部-nginx-反向代理生产环境推荐)
 
 ### 📦 分别部署
 
