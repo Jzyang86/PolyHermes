@@ -89,7 +89,8 @@ class ApiHealthCheckService(
                 async { checkGammaApi() },
                 async { checkPolygonRpc() },
                 async { checkPolymarketWebSocket() },
-                async { checkBuilderRelayerApi() }
+                async { checkBuilderRelayerApi() },
+                async { checkGitHubApi() }
             )
 
             jobs.awaitAll().forEach { result ->
@@ -452,6 +453,15 @@ class ApiHealthCheckService(
                 message = e.message ?: "连接失败"
             )
         }
+    }
+    
+    /**
+     * 检查 GitHub API
+     */
+    private suspend fun checkGitHubApi(): ApiHealthCheckDto = withContext(Dispatchers.IO) {
+        val url = "https://api.github.com/"
+        // 直接使用 GitHub API 根端点检查可用性
+        checkApi("GitHub API", url)
     }
 }
 

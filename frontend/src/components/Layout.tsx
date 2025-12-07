@@ -18,7 +18,8 @@ import {
   GithubOutlined,
   TwitterOutlined,
   CheckCircleOutlined,
-  SendOutlined
+  SendOutlined,
+  NotificationOutlined
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import type { ReactNode } from 'react'
@@ -73,6 +74,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [location.pathname])
   
   const menuItems: MenuProps['items'] = [
+    {
+      key: '/announcements',
+      icon: <NotificationOutlined />,
+      label: t('menu.announcements') || '公告'
+    },
     {
       key: '/accounts',
       icon: <WalletOutlined />,

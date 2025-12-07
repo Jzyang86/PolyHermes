@@ -613,6 +613,65 @@ export const apiService = {
      */
     getAutoRedeemStatus: () =>
       apiClient.post<ApiResponse<{ enabled: boolean }>>('/system/config/auto-redeem/status', {})
+  },
+  
+  /**
+   * 公告 API
+   */
+  announcements: {
+    /**
+     * 获取公告列表（最近10条）
+     */
+    list: (data?: { forceRefresh?: boolean }) =>
+      apiClient.post<ApiResponse<{
+        list: Array<{
+          id: number
+          title: string
+          body: string
+          author: string
+          authorAvatarUrl?: string
+          createdAt: number
+          updatedAt: number
+          reactions?: {
+            plusOne?: number
+            minusOne?: number
+            laugh?: number
+            confused?: number
+            heart?: number
+            hooray?: number
+            eyes?: number
+            rocket?: number
+            total?: number
+          }
+        }>
+        hasMore: boolean
+        total: number
+      }>>('/announcements/list', data || {}),
+    
+    /**
+     * 获取公告详情
+     */
+    detail: (data: { id?: number; forceRefresh?: boolean }) =>
+      apiClient.post<ApiResponse<{
+        id: number
+        title: string
+        body: string
+        author: string
+        authorAvatarUrl?: string
+        createdAt: number
+        updatedAt: number
+        reactions?: {
+          plusOne?: number
+          minusOne?: number
+          laugh?: number
+          confused?: number
+          heart?: number
+          hooray?: number
+          eyes?: number
+          rocket?: number
+          total?: number
+        }
+      }>>('/announcements/detail', data)
   }
 }
 

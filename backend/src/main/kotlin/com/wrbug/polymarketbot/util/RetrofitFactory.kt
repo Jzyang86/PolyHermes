@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.wrbug.polymarketbot.api.BuilderRelayerApi
 import com.wrbug.polymarketbot.api.EthereumRpcApi
+import com.wrbug.polymarketbot.api.GitHubApi
 import com.wrbug.polymarketbot.api.PolymarketClobApi
 import com.wrbug.polymarketbot.api.PolymarketDataApi
 import com.wrbug.polymarketbot.api.PolymarketGammaApi
@@ -200,6 +201,41 @@ class RetrofitFactory(
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
             .create(BuilderRelayerApi::class.java)
+    }
+    
+    /**
+     * 创建 GitHub API 客户端
+     * GitHub API 是公开 API，不需要认证（但建议使用 token 提高速率限制）
+     * 添加 Accept 头以获取 reactions 数据
+     * @return GitHubApi 客户端
+     */
+    fun createGitHubApi(): GitHubApi {
+        val baseUrl = "https://api.github.com"
+        
+        // 添加拦截器，设置 Accept 头以获取 reactions 数据
+        val githubInterceptor = object : Interceptor {
+            override fun intercept(chain: Interceptor.Chain): Response {
+                val request = chain.request().newBuilder()
+                    .header("Accept", "application/vnd.github+json")
+                    .build()
+                return chain.proceed(request)
+            }
+        }
+        
+        val okHttpClient = createClient()
+            .addInterceptor(githubInterceptor)
+            .build()
+        
+        val gson = GsonBuilder()
+            .setLenient()
+            .create()
+        
+        return Retrofit.Builder()
+            .baseUrl("$baseUrl/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+            .create(GitHubApi::class.java)
     }
 }
 

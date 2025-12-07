@@ -231,6 +231,7 @@
     "copyTradingConfig": "Copy Trading Config",
     "positions": "Position Management",
     "statistics": "Statistics",
+    "announcements": "Announcements",
     "users": "User Management",
     "systemSettings": "System",
     "systemOverview": "Overview",
@@ -952,5 +953,18 @@
     "webhookUrl": "Webhook URL",
     "webhookUrlPlaceholder": "Webhook URL (from Slack App settings)",
     "webhookUrlRequired": "Please enter Webhook URL"
+  },
+  "announcements": {
+    "title": "Announcements",
+    "noAnnouncements": "No announcements",
+    "noDetail": "Please select an announcement to view details",
+    "viewMore": "View more announcements",
+    "author": "Author",
+    "createdAt": "Published at",
+    "noTitle": "No title",
+    "expand": "Expand all",
+    "collapse": "Collapse",
+    "refresh": "Refresh",
+    "list": "List"
   }
 }
