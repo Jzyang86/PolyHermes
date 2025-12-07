@@ -332,7 +332,7 @@ The system supports configuring HTTP proxy through Web UI without modifying envi
 
 ### 📚 Detailed Deployment Documentation
 
-For more deployment options and detailed instructions, please refer to: [Deployment Documentation](docs/DEPLOYMENT.md)
+For more deployment options and detailed instructions, please refer to: [Deployment Documentation](docs/en/DEPLOYMENT.md)
 
 Including:
 - Detailed steps for all-in-one deployment
@@ -349,7 +349,7 @@ The project supports automatic version number management and Docker image buildi
 - **Auto Delete**: Automatically deletes corresponding Docker image tags when releases are deleted
 - **Version Display**: Frontend automatically displays current version number
 
-For detailed instructions, please refer to: [Version Management Documentation](docs/VERSION_MANAGEMENT.md)
+For detailed instructions, please refer to: [Version Management Documentation](docs/en/VERSION_MANAGEMENT.md)
 
 ---
 
@@ -357,7 +357,7 @@ For detailed instructions, please refer to: [Version Management Documentation](d
 
 For detailed development guides, API documentation, code standards, etc., please refer to:
 
-### 📖 [Development Documentation](docs/en/DEVELOPMENT.md) / [中文](docs/zh/DEVELOPMENT.md)
+### 📖 [Development Documentation](docs/en/DEVELOPMENT.md)
 
 The development documentation includes:
 
@@ -372,11 +372,11 @@ The development documentation includes:
 
 ### 📚 Other Documentation
 
-- [Deployment Documentation (English)](docs/en/DEPLOYMENT.md) / [中文](docs/zh/DEPLOYMENT.md) - Detailed deployment guide (Java/Docker)
-- [Version Management Documentation (English)](docs/en/VERSION_MANAGEMENT.md) / [中文](docs/zh/VERSION_MANAGEMENT.md) - Version number management and auto-build
-- [Development Documentation (English)](docs/en/DEVELOPMENT.md) / [中文](docs/zh/DEVELOPMENT.md) - Development guide
-- [Copy Trading System Requirements](docs/zh/copy-trading-requirements.md) - Backend API documentation
-- [Frontend Requirements](docs/zh/copy-trading-frontend-requirements.md) - Frontend feature documentation
+- [Deployment Documentation](docs/en/DEPLOYMENT.md) - Detailed deployment guide (Java/Docker)
+- [Version Management Documentation](docs/en/VERSION_MANAGEMENT.md) - Version number management and auto-build
+- [Development Documentation](docs/en/DEVELOPMENT.md) - Development guide
+- [Copy Trading System Requirements](docs/zh/copy-trading-requirements.md) - Backend API documentation (Chinese only)
+- [Frontend Requirements](docs/zh/copy-trading-frontend-requirements.md) - Frontend feature documentation (Chinese only)
 
 ### 🤝 Contributing
 
