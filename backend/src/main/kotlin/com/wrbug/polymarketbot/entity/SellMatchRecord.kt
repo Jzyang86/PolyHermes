@@ -41,6 +41,9 @@ data class SellMatchRecord(
     @Column(name = "total_realized_pnl", nullable = false, precision = 20, scale = 8)
     val totalRealizedPnl: BigDecimal,  // 总已实现盈亏
     
+    @Column(name = "price_updated", nullable = false)
+    var priceUpdated: Boolean = false,  // 价格是否已更新（从订单详情获取实际成交价）
+    
     @Column(name = "created_at", nullable = false)
     val createdAt: Long = System.currentTimeMillis()
 )

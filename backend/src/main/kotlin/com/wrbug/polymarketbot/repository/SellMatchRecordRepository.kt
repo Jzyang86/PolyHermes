@@ -24,5 +24,10 @@ interface SellMatchRecordRepository : JpaRepository<SellMatchRecord, Long> {
      * 根据Leader卖出交易ID查询记录
      */
     fun findByLeaderSellTradeId(leaderSellTradeId: String): SellMatchRecord?
+    
+    /**
+     * 查询所有价格未更新的卖出记录
+     */
+    fun findByPriceUpdatedFalse(): List<SellMatchRecord>
 }
 

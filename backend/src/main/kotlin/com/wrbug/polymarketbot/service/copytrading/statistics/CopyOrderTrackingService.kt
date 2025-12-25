@@ -567,6 +567,12 @@ open class CopyOrderTrackingService(
                     }
 
                     val realOrderId = createOrderResult.getOrNull() ?: continue
+                    
+                    // 验证 orderId 格式（必须以 0x 开头的 16 进制）
+                    if (!isValidOrderId(realOrderId)) {
+                        logger.warn("买入订单ID格式无效，跳过保存: orderId=$realOrderId")
+                        continue
+                    }
 
                     // 创建买入订单跟踪记录（使用真实订单ID，使用outcomeIndex）
                     val tracking = CopyOrderTracking(
@@ -942,8 +948,20 @@ open class CopyOrderTrackingService(
         }
 
         val realSellOrderId = createOrderResult.getOrNull() ?: return
+        
+        // 12. 下单时直接使用下单价格保存，等待定时任务更新实际成交价
+        // priceUpdated 统一由定时任务更新，下单时统一设置为 false（非0x开头的除外）
+        val priceUpdated = !realSellOrderId.startsWith("0x", ignoreCase = true)
+        if (priceUpdated) {
+            logger.debug("卖出订单ID非0x开头，标记为已更新: orderId=$realSellOrderId")
+        } else {
+            logger.debug("卖出订单ID为0x开头，等待定时任务更新价格: orderId=$realSellOrderId")
+        }
+        
+        // 使用下单价格，等待定时任务更新实际成交价
+        val actualSellPrice = sellPrice
 
-        // 12. 更新买入订单跟踪状态
+        // 13. 更新买入订单跟踪状态
         for (order in unmatchedOrders) {
             val detail = matchDetails.find { it.trackingId == order.id }
             if (detail != null) {
@@ -956,8 +974,17 @@ open class CopyOrderTrackingService(
             }
         }
 
-        // 13. 创建卖出匹配记录（使用真实订单ID，使用outcomeIndex）
-        val totalRealizedPnl = matchDetails.sumOf { it.realizedPnl.toSafeBigDecimal() }
+        // 14. 重新计算盈亏（使用实际成交价）
+        val updatedMatchDetails = matchDetails.map { detail ->
+            val updatedRealizedPnl = actualSellPrice.subtract(detail.buyPrice).multi(detail.matchedQuantity)
+            detail.copy(
+                sellPrice = actualSellPrice,
+                realizedPnl = updatedRealizedPnl
+            )
+        }
+
+        // 15. 创建卖出匹配记录（使用真实订单ID和实际成交价）
+        val totalRealizedPnl = updatedMatchDetails.sumOf { it.realizedPnl.toSafeBigDecimal() }
 
         val matchRecord = SellMatchRecord(
             copyTradingId = copyTrading.id,
@@ -967,14 +994,15 @@ open class CopyOrderTrackingService(
             side = leaderSellTrade.outcomeIndex.toString(),  // 使用outcomeIndex作为side（兼容旧数据）
             outcomeIndex = leaderSellTrade.outcomeIndex,  // 新增字段
             totalMatchedQuantity = totalMatched,
-            sellPrice = sellPrice,
-            totalRealizedPnl = totalRealizedPnl
+            sellPrice = actualSellPrice,  // 使用实际成交价（如果查询失败则为下单价格）
+            totalRealizedPnl = totalRealizedPnl,
+            priceUpdated = priceUpdated  // 标记价格是否已更新
         )
 
         val savedRecord = sellMatchRecordRepository.save(matchRecord)
 
-        // 14. 保存匹配明细
-        for (detail in matchDetails) {
+        // 16. 保存匹配明细（使用实际成交价）
+        for (detail in updatedMatchDetails) {
             val savedDetail = detail.copy(matchRecordId = savedRecord.id!!)
             sellMatchDetailRepository.save(savedDetail)
         }
@@ -1379,6 +1407,111 @@ open class CopyOrderTrackingService(
             FilterStatus.FAILED_ORDER_DEPTH -> "ORDER_DEPTH"
             FilterStatus.FAILED_MAX_POSITION_VALUE -> "MAX_POSITION_VALUE"
             FilterStatus.FAILED_MAX_POSITION_COUNT -> "MAX_POSITION_COUNT"
+        }
+    }
+
+    /**
+     * 验证订单ID格式
+     * 订单ID必须以 0x 开头，且是有效的 16 进制字符串
+     * 
+     * @param orderId 订单ID
+     * @return 如果格式有效返回 true，否则返回 false
+     */
+    private fun isValidOrderId(orderId: String): Boolean {
+        if (!orderId.startsWith("0x", ignoreCase = true)) {
+            return false
+        }
+        // 验证是否为有效的 16 进制字符串（去除 0x 前缀后）
+        val hexPart = orderId.substring(2)
+        if (hexPart.isEmpty()) {
+            return false
+        }
+        // 检查是否只包含 0-9, a-f, A-F
+        return hexPart.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+    }
+    
+    /**
+     * 获取订单的实际成交价
+     * 通过查询订单详情和关联的交易记录，计算加权平均成交价
+     * 
+     * @param orderId 订单ID
+     * @param clobApi CLOB API 客户端（已认证）
+     * @param fallbackPrice 如果查询失败，使用此价格作为默认值
+     * @return 实际成交价（加权平均），如果查询失败则返回 fallbackPrice
+     */
+    suspend fun getActualExecutionPrice(
+        orderId: String,
+        clobApi: PolymarketClobApi,
+        fallbackPrice: BigDecimal
+    ): BigDecimal {
+        return try {
+            // 1. 查询订单详情
+            val orderResponse = clobApi.getOrder(orderId)
+            if (!orderResponse.isSuccessful || orderResponse.body() == null) {
+                logger.warn("查询订单详情失败: orderId=$orderId, code=${orderResponse.code()}")
+                return fallbackPrice
+            }
+
+            val order = orderResponse.body()!!
+            
+            // 2. 如果订单未成交，使用下单价格
+            if (order.status != "FILLED" && order.sizeMatched.toSafeBigDecimal() <= BigDecimal.ZERO) {
+                logger.debug("订单未成交，使用下单价格: orderId=$orderId, status=${order.status}")
+                return fallbackPrice
+            }
+
+            // 3. 如果订单已成交，通过 associateTrades 获取交易记录
+            val associateTrades = order.associateTrades
+            if (associateTrades.isNullOrEmpty()) {
+                logger.debug("订单无关联交易记录，使用下单价格: orderId=$orderId")
+                return fallbackPrice
+            }
+
+            // 4. 查询所有关联的交易记录
+            val trades = mutableListOf<TradeResponse>()
+            for (tradeId in associateTrades) {
+                try {
+                    val tradesResponse = clobApi.getTrades(id = tradeId)
+                    if (tradesResponse.isSuccessful && tradesResponse.body() != null) {
+                        val tradesData = tradesResponse.body()!!.data
+                        trades.addAll(tradesData)
+                    }
+                } catch (e: Exception) {
+                    logger.warn("查询交易记录失败: tradeId=$tradeId, error=${e.message}")
+                }
+            }
+
+            if (trades.isEmpty()) {
+                logger.debug("未找到交易记录，使用下单价格: orderId=$orderId")
+                return fallbackPrice
+            }
+
+            // 5. 计算加权平均成交价
+            // 加权平均 = Σ(price * size) / Σ(size)
+            var totalAmount = BigDecimal.ZERO
+            var totalSize = BigDecimal.ZERO
+
+            for (trade in trades) {
+                val tradePrice = trade.price.toSafeBigDecimal()
+                val tradeSize = trade.size.toSafeBigDecimal()
+                
+                if (tradeSize > BigDecimal.ZERO) {
+                    totalAmount = totalAmount.add(tradePrice.multiply(tradeSize))
+                    totalSize = totalSize.add(tradeSize)
+                }
+            }
+
+            if (totalSize > BigDecimal.ZERO) {
+                val weightedAveragePrice = totalAmount.divide(totalSize, 8, java.math.RoundingMode.HALF_UP)
+                logger.info("计算实际成交价成功: orderId=$orderId, 加权平均价=$weightedAveragePrice, 下单价格=$fallbackPrice, 交易笔数=${trades.size}")
+                return weightedAveragePrice
+            } else {
+                logger.warn("交易记录数量为0，使用下单价格: orderId=$orderId")
+                return fallbackPrice
+            }
+        } catch (e: Exception) {
+            logger.error("获取实际成交价异常: orderId=$orderId, error=${e.message}", e)
+            return fallbackPrice
         }
     }
 
