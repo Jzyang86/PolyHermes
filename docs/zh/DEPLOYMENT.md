@@ -129,7 +129,11 @@ docker-compose -f docker-compose.prod.yml logs -f
 ```
 
 **注意事项**：
-- ⚠️ 更新前建议备份数据库（如果使用 Docker Compose 中的 MySQL）
+- ⚠️ **备份数据库（强烈推荐）**：
+  - 备份不是必须的，但强烈推荐，特别是生产环境
+  - Docker 更新不会删除数据（数据存储在独立的数据卷中）
+  - 但数据库结构可能会变更，如果迁移失败，备份可以帮助恢复
+  - 备份命令：`docker exec polyhermes-mysql mysqldump -u root -p polyhermes > backup_$(date +%Y%m%d_%H%M%S).sql`
 - ⚠️ 更新过程中服务会短暂中断，建议在低峰期进行
 - ✅ 使用 `docker-compose pull` 可以自动拉取最新镜像并更新（如果使用 `latest` 标签）
 - ✅ 查看可用版本：访问 [Docker Hub](https://hub.docker.com/r/wrbug/polyhermes/tags) 或 [GitHub Releases](https://github.com/WrBug/PolyHermes/releases)

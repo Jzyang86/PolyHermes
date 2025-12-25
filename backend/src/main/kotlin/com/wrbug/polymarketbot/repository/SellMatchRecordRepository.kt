@@ -27,6 +27,7 @@ interface SellMatchRecordRepository : JpaRepository<SellMatchRecord, Long> {
     
     /**
      * 查询所有价格未更新的卖出记录
+     * 注意：priceUpdated 现在同时表示价格已更新和通知已发送（共用字段）
      */
     fun findByPriceUpdatedFalse(): List<SellMatchRecord>
 }

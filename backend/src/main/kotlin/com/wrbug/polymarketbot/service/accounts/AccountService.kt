@@ -927,6 +927,8 @@ class AccountService(
                                 marketId = request.marketId,
                                 marketSlug = marketSlug,
                                 side = request.side,
+                                price = sellPrice,  // 直接传递卖出价格
+                                size = sellQuantity.toPlainString(),  // 直接传递卖出数量
                                 accountName = account.accountName,
                                 walletAddress = account.walletAddress,
                                 clobApi = clobApi,
