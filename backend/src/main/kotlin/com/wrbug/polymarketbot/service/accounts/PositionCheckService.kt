@@ -483,17 +483,17 @@ class PositionCheckService(
                     if (isMarketEnded) {
                         logger.debug("市场已结束: marketId=$marketId, closed=${market.closed}, endDate=${market.endDate}")
                         // 市场已结束，检查该 outcome 是赢了还是输了
-                        val outcomeResult = checkOutcomeResult(market, outcomeIndex)
-                        when (outcomeResult) {
-                            OutcomeResult.WON -> {
+                    val outcomeResult = checkOutcomeResult(market, outcomeIndex)
+                    when (outcomeResult) {
+                        OutcomeResult.WON -> {
                                 logger.info("市场已结束且该 outcome 赢了，返回价格为 1: marketId=$marketId, outcomeIndex=$outcomeIndex")
-                                return BigDecimal.ONE
-                            }
-                            OutcomeResult.LOST -> {
+                            return BigDecimal.ONE
+                        }
+                        OutcomeResult.LOST -> {
                                 logger.info("市场已结束且该 outcome 输了，返回价格为 0: marketId=$marketId, outcomeIndex=$outcomeIndex")
-                                return BigDecimal.ZERO
-                            }
-                            OutcomeResult.UNKNOWN -> {
+                            return BigDecimal.ZERO
+                        }
+                        OutcomeResult.UNKNOWN -> {
                                 // 无法判断，记录警告并继续使用正常价格逻辑
                                 logger.warn("市场已结束但无法判断 outcome 结果，使用正常价格: marketId=$marketId, outcomeIndex=$outcomeIndex, closed=${market.closed}, endDate=${market.endDate}, outcomePrices=${market.outcomePrices}, bestBid=${market.bestBid}, bestAsk=${market.bestAsk}")
                             }

@@ -99,22 +99,22 @@ const ApiHealthStatus: React.FC = () => {
                     bodyStyle={{ padding: '12px' }}
                   >
                     <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                        <Text strong style={{ fontSize: '14px' }}>
-                          {item.name}
-                        </Text>
-                        <Space>
-                          {item.responseTime !== undefined && item.responseTime !== null && (
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                              <Text strong style={{ color: '#1890ff' }}>{item.responseTime}ms</Text>
-                            </Text>
-                          )}
-                          <Badge 
-                            status={item.status === 'success' ? 'success' : item.status === 'skipped' ? 'default' : 'error'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <Text strong style={{ fontSize: '14px' }}>
+                        {item.name}
+                      </Text>
+                      <Space>
+                        {item.responseTime !== undefined && item.responseTime !== null && (
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            <Text strong style={{ color: '#1890ff' }}>{item.responseTime}ms</Text>
+                          </Text>
+                        )}
+                        <Badge 
+                          status={item.status === 'success' ? 'success' : item.status === 'skipped' ? 'default' : 'error'}
                             text={getStatusText(item.status)}
-                          />
-                        </Space>
-                      </div>
+                        />
+                      </Space>
+                    </div>
                       
                       <div>
                         <Text type="secondary" style={{ fontSize: '12px', wordBreak: 'break-all' }}>

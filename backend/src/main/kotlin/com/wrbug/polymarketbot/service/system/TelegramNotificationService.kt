@@ -100,14 +100,14 @@ class TelegramNotificationService(
                 if (orderResponse.isSuccessful && orderResponse.body() != null) {
                     val order = orderResponse.body()!!
                     if (actualPrice == null) {
-                        actualPrice = order.price
+                    actualPrice = order.price
                     }
                     if (actualSize == null) {
-                        actualSize = order.originalSize  // 使用 originalSize 作为订单数量
+                    actualSize = order.originalSize  // 使用 originalSize 作为订单数量
                     }
                     actualSide = order.side  // 使用订单详情中的 side
                     if (actualOutcome == null) {
-                        actualOutcome = order.outcome  // 使用订单详情中的 outcome（市场方向）
+                    actualOutcome = order.outcome  // 使用订单详情中的 outcome（市场方向）
                     }
                 }
             } catch (e: Exception) {
