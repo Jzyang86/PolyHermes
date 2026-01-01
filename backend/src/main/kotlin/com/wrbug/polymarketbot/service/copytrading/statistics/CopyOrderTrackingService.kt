@@ -1496,12 +1496,18 @@ open class CopyOrderTrackingService(
         return try {
             // 1. 查询订单详情
             val orderResponse = clobApi.getOrder(orderId)
-            if (!orderResponse.isSuccessful || orderResponse.body() == null) {
-                logger.warn("查询订单详情失败: orderId=$orderId, code=${orderResponse.code()}")
+            if (!orderResponse.isSuccessful) {
+                val errorBody = orderResponse.errorBody()?.string()?.take(200) ?: "无错误详情"
+                logger.warn("查询订单详情失败: orderId=$orderId, code=${orderResponse.code()}, errorBody=$errorBody")
                 return fallbackPrice
             }
-
-            val order = orderResponse.body()!!
+            
+            val order = orderResponse.body()
+            if (order == null) {
+                // 响应体为空，可能是订单不存在或已过期
+                logger.warn("查询订单详情失败: 响应体为空, orderId=$orderId, code=${orderResponse.code()}")
+                return fallbackPrice
+            }
             
             // 2. 如果订单未成交，使用下单价格
             if (order.status != "FILLED" && order.sizeMatched.toSafeBigDecimal() <= BigDecimal.ZERO) {
