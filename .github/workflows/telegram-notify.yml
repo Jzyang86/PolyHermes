@@ -70,14 +70,7 @@ jobs:
           PR_TITLE_ESCAPED=$(echo "$PR_TITLE" | sed 's/&/\&amp;/g' | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')
           
           # 构建消息内容（使用 HTML 格式）
-          MESSAGE=$(cat <<EOF
-🚀 <b>PR 已合并到 main 分支</b>
-
-📝 <b>PR #${PR_NUMBER}:</b> ${PR_TITLE_ESCAPED}
-🔗 <b>链接:</b> <a href="${PR_URL}">查看 PR</a>
-🔀 <b>合并提交:</b> <code>${PR_MERGE_COMMIT:0:7}</code>
-EOF
-)
+          MESSAGE="🚀 <b>PR 已合并到 main 分支</b>"$'\n'$'\n'"📝 <b>PR #${PR_NUMBER}:</b> ${PR_TITLE_ESCAPED}"$'\n'"🔗 <b>链接:</b> <a href=\"${PR_URL}\">查看 PR</a>"$'\n'"🔀 <b>合并提交:</b> <code>${PR_MERGE_COMMIT:0:7}</code>"
 
           # 添加 PR 描述（如果有）
           if [ -n "$PR_BODY" ] && [ "$PR_BODY" != "null" ] && [ "$PR_BODY" != "" ]; then

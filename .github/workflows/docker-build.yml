@@ -85,15 +85,7 @@ jobs:
           REPO_NAME="${{ github.repository }}"
           
           # 构建消息内容（使用 HTML 格式）
-          MESSAGE=$(cat <<EOF
-✅ <b>Docker 镜像构建成功</b>
-
-📦 <b>版本:</b> ${VERSION}
-🏷️ <b>Tag:</b> <code>${TAG}</code>
-🔗 <b>Release:</b> <a href="${RELEASE_URL}">查看 Release</a>
-🐳 <b>Docker 镜像:</b> <code>wrbug/polyhermes:${TAG}</code>
-EOF
-)
+          MESSAGE="✅ <b>Docker 镜像构建成功</b>"$'\n'$'\n'"📦 <b>版本:</b> ${VERSION}"$'\n'"🏷️ <b>Tag:</b> <code>${TAG}</code>"$'\n'"🔗 <b>Release:</b> <a href=\"${RELEASE_URL}\">查看 Release</a>"$'\n'"🐳 <b>Docker 镜像:</b> <code>wrbug/polyhermes:${TAG}</code>"
           
           # 添加 Release 名称（如果有）
           if [ -n "$RELEASE_NAME" ] && [ "$RELEASE_NAME" != "null" ] && [ "$RELEASE_NAME" != "" ]; then
