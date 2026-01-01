@@ -37,7 +37,8 @@ class AccountService(
     private val orderSigningService: OrderSigningService,
     private val cryptoUtils: CryptoUtils,
     private val telegramNotificationService: TelegramNotificationService? = null,  // 可选，避免循环依赖
-    private val relayClientService: RelayClientService
+    private val relayClientService: RelayClientService,
+    private val jsonUtils: JsonUtils
 ) {
 
     private val logger = LoggerFactory.getLogger(AccountService::class.java)
@@ -1121,7 +1122,7 @@ class AccountService(
                     // 如果目标 outcome 不是第一个（index != 0），需要转换价格
                     // 对于二元市场：第二个 outcome 的价格 = 1 - 第一个 outcome 的价格
                     if (outcomeIndex != null && outcomeIndex > 0) {
-                        val outcomes = JsonUtils.parseStringArray(market.outcomes)
+                        val outcomes = jsonUtils.parseStringArray(market.outcomes)
                         // 只对二元市场进行价格转换
                         if (outcomes.size == 2) {
                             // 保存原始第一个 outcome 的价格

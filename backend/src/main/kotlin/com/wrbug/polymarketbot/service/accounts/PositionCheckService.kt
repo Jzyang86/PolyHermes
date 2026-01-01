@@ -48,7 +48,8 @@ class PositionCheckService(
     private val accountRepository: AccountRepository,
     private val messageSource: MessageSource,
     private val retrofitFactory: RetrofitFactory,
-    private val blockchainService: BlockchainService
+    private val blockchainService: BlockchainService,
+    private val jsonUtils: JsonUtils
 ) {
     
     private val logger = LoggerFactory.getLogger(PositionCheckService::class.java)
@@ -582,7 +583,7 @@ class PositionCheckService(
             // 优先使用 outcomePrices（结算价格数组）
             val outcomePrices = market.outcomePrices
             if (outcomePrices != null && outcomePrices.isNotBlank()) {
-                val prices = JsonUtils.parseStringArray(outcomePrices)
+                val prices = jsonUtils.parseStringArray(outcomePrices)
                 if (outcomeIndex < prices.size) {
                     val price = prices[outcomeIndex].toSafeBigDecimal()
                     // 如果价格 >= 0.99，认为赢了

@@ -1,7 +1,6 @@
 package com.wrbug.polymarketbot.util
 
 import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import com.wrbug.polymarketbot.api.BuilderRelayerApi
 import com.wrbug.polymarketbot.api.EthereumRpcApi
 import com.wrbug.polymarketbot.api.GitHubApi
@@ -34,7 +33,8 @@ class RetrofitFactory(
     @Value("\${polymarket.clob.base-url}")
     private val clobBaseUrl: String,
     @Value("\${polymarket.gamma.base-url}")
-    private val gammaBaseUrl: String
+    private val gammaBaseUrl: String,
+    private val gson: Gson
 ) {
     
     /**
@@ -61,11 +61,6 @@ class RetrofitFactory(
             .addInterceptor(responseLoggingInterceptor)
             .build()
         
-        // 创建 lenient 模式的 Gson，允许解析格式不严格的 JSON
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
-        
         return Retrofit.Builder()
             .baseUrl(clobBaseUrl)
             .client(okHttpClient)
@@ -86,11 +81,6 @@ class RetrofitFactory(
         val okHttpClient = createClient()
             .addInterceptor(responseLoggingInterceptor)
             .build()
-        
-        // 创建 lenient 模式的 Gson，允许解析格式不严格的 JSON
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
         
         return Retrofit.Builder()
             .baseUrl(clobBaseUrl)
@@ -128,11 +118,6 @@ class RetrofitFactory(
         val okHttpClient = createClient()
             .addInterceptor(urlReplaceInterceptor)
             .build()
-        
-        // 创建 lenient 模式的 Gson
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
         
         return Retrofit.Builder()
             .baseUrl(fixedBaseUrl)
@@ -228,11 +213,6 @@ class RetrofitFactory(
         }
         val okHttpClient = createClient().build()
         
-        // 创建 lenient 模式的 Gson
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
-        
         return Retrofit.Builder()
             .baseUrl("$baseUrl/")
             .client(okHttpClient)
@@ -252,11 +232,6 @@ class RetrofitFactory(
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
-        
-        // 创建 lenient 模式的 Gson
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
         
         return Retrofit.Builder()
             .baseUrl("$baseUrl/")
@@ -292,10 +267,6 @@ class RetrofitFactory(
             .addInterceptor(builderAuthInterceptor)
             .build()
         
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
-        
         return Retrofit.Builder()
             .baseUrl("$baseUrl/")
             .client(okHttpClient)
@@ -326,10 +297,6 @@ class RetrofitFactory(
         val okHttpClient = createClient()
             .addInterceptor(githubInterceptor)
             .build()
-        
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
         
         return Retrofit.Builder()
             .baseUrl("$baseUrl/")
@@ -393,18 +360,32 @@ class ResponseLoggingInterceptor : Interceptor {
                 val responseBody = response.peekBody(2048)
                 val responseBodyString = responseBody.string()
                 
-                // 检查是否是有效的 JSON
-                val isJson = responseBodyString.trim().startsWith("{") || 
-                            responseBodyString.trim().startsWith("[")
+                // 检查响应体是否为空
+                val isEmpty = responseBodyString.isBlank()
                 
-                if (!isJson || !response.isSuccessful) {
+                // 检查是否是有效的 JSON
+                val trimmedBody = responseBodyString.trim()
+                val isJson = !isEmpty && (
+                    trimmedBody.startsWith("{") || 
+                    trimmedBody.startsWith("[")
+                )
+                
+                // 如果响应体为空或不是 JSON，记录警告
+                if (isEmpty || !isJson) {
+                    val bodyPreview = if (isEmpty) {
+                        "(空响应体)"
+                    } else {
+                        trimmedBody.take(500)
+                    }
                     logger.warn(
                         "API 响应异常: method=${request.method}, url=${request.url}, " +
-                        "code=${response.code}, isJson=$isJson, " +
-                        "responseBody=${responseBodyString.take(500)}"
+                        "code=${response.code}, isJson=$isJson, isEmpty=$isEmpty, " +
+                        "responseBody=$bodyPreview"
                     )
                 }
             } catch (e: Exception) {
+                // 如果读取响应体失败，记录异常但不影响响应
+                logger.debug("读取响应体失败: ${e.message}")
             }
         }
         
