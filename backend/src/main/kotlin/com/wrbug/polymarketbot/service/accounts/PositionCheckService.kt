@@ -382,9 +382,15 @@ class PositionCheckService(
                         
                         if (ordersToMarkAsSold.isNotEmpty()) {
                             // 有订单创建时间超过2分钟，认为仓位已被出售
-                            val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
-                            updateOrdersAsSold(ordersToMarkAsSold, currentPrice, copyTrading.id, marketId, outcomeIndex)
-                            logger.debug("仓位不存在且订单创建时间超过2分钟，标记为已卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, orderCount=${ordersToMarkAsSold.size}")
+                            try {
+                                val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
+                                updateOrdersAsSold(ordersToMarkAsSold, currentPrice, copyTrading.id, marketId, outcomeIndex)
+                                logger.debug("仓位不存在且订单创建时间超过2分钟，标记为已卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, orderCount=${ordersToMarkAsSold.size}")
+                            } catch (e: Exception) {
+                                logger.warn("无法获取市场价格，跳过标记为已卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, error=${e.message}")
+                                // 无法获取价格时，跳过该市场的处理，等待下次检查时再试
+                                continue
+                            }
                         } else {
                             // 订单创建时间不足2分钟，可能是刚创建的订单，暂时不处理
                             logger.debug("仓位不存在但订单创建时间不足2分钟，暂不标记为已卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, orderCount=${orders.size}, oldestOrderAge=${orders.minOfOrNull { now - it.createdAt }?.let { "${it}ms" } ?: "N/A"}")
@@ -413,9 +419,15 @@ class PositionCheckService(
                         }
                         
                         // 如果已成交数量 > 0，按FIFO顺序匹配订单
-                        val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
-                        updateOrdersAsSoldByFIFO(orders, soldQuantity, currentPrice,
-                            copyTrading.id, marketId, outcomeIndex)
+                        try {
+                            val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
+                            updateOrdersAsSoldByFIFO(orders, soldQuantity, currentPrice,
+                                copyTrading.id, marketId, outcomeIndex)
+                        } catch (e: Exception) {
+                            logger.warn("无法获取市场价格，跳过FIFO匹配: marketId=$marketId, outcomeIndex=$outcomeIndex, error=${e.message}")
+                            // 无法获取价格时，跳过该市场的处理，等待下次检查时再试
+                            continue
+                        }
                     }
                 }
             }

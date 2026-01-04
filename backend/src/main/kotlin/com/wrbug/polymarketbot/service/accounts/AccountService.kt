@@ -228,11 +228,12 @@ class AccountService(
 
     /**
      * 查询账户列表
+     * 列表接口只返回基本信息，不查询统计信息（统计信息只在详情接口中查询）
      */
     fun getAccountList(): Result<AccountListResponse> {
         return try {
             val accounts = accountRepository.findAllByOrderByCreatedAtAsc()
-            val accountDtos = accounts.map { toDto(it) }
+            val accountDtos = accounts.map { toBasicDto(it) }
 
             Result.success(
                 AccountListResponse(
@@ -353,7 +354,30 @@ class AccountService(
     }
 
     /**
-     * 转换为 DTO
+     * 转换为基础 DTO（列表使用，不包含统计信息）
+     * 列表接口只返回基本信息，不查询统计信息，以提高性能
+     */
+    private fun toBasicDto(account: Account): AccountDto {
+        return AccountDto(
+            id = account.id!!,
+            walletAddress = account.walletAddress,
+            proxyAddress = account.proxyAddress,
+            accountName = account.accountName,
+            isEnabled = account.isEnabled,
+            walletType = account.walletType,
+            apiKeyConfigured = account.apiKey != null,
+            apiSecretConfigured = account.apiSecret != null,
+            apiPassphraseConfigured = account.apiPassphrase != null,
+            totalOrders = null,
+            totalPnl = null,
+            activeOrders = null,
+            completedOrders = null,
+            positionCount = null
+        )
+    }
+
+    /**
+     * 转换为完整 DTO（详情使用，包含交易统计数据）
      * 包含交易统计数据（总订单数、总盈亏、活跃订单数、已完成订单数、持仓数量）
      */
     private fun toDto(account: Account): AccountDto {
