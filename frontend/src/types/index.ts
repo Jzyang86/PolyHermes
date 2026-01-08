@@ -628,6 +628,8 @@ export interface BuyOrderInfo {
   leaderTradeId: string
   marketId: string
   marketTitle?: string  // 市场名称
+  marketSlug?: string  // 市场 slug（用于构建 URL）
+  marketCategory?: string  // 市场分类（sports, crypto 等）
   side: string
   quantity: string
   price: string
@@ -646,6 +648,8 @@ export interface SellOrderInfo {
   leaderTradeId: string
   marketId: string
   marketTitle?: string  // 市场名称
+  marketSlug?: string  // 市场 slug（用于构建 URL）
+  marketCategory?: string  // 市场分类（sports, crypto 等）
   side: string
   quantity: string
   price: string
@@ -662,6 +666,8 @@ export interface MatchedOrderInfo {
   buyOrderId: string
   marketId?: string  // 市场ID
   marketTitle?: string  // 市场名称
+  marketSlug?: string  // 市场 slug（用于构建 URL）
+  marketCategory?: string  // 市场分类（sports, crypto 等）
   matchedQuantity: string
   buyPrice: string
   sellPrice: string

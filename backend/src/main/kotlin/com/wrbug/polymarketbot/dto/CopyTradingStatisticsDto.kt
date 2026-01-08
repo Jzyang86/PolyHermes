@@ -41,6 +41,8 @@ data class BuyOrderInfo(
     val leaderTradeId: String,
     val marketId: String,
     val marketTitle: String? = null,  // 市场名称
+    val marketSlug: String? = null,  // 市场 slug（用于构建 URL）
+    val marketCategory: String? = null,  // 市场分类（sports, crypto 等）
     val side: String,
     val quantity: String,
     val price: String,
@@ -59,6 +61,8 @@ data class SellOrderInfo(
     val leaderTradeId: String,
     val marketId: String,
     val marketTitle: String? = null,  // 市场名称
+    val marketSlug: String? = null,  // 市场 slug（用于构建 URL）
+    val marketCategory: String? = null,  // 市场分类（sports, crypto 等）
     val side: String,
     val quantity: String,
     val price: String,
@@ -75,6 +79,8 @@ data class MatchedOrderInfo(
     val buyOrderId: String,
     val marketId: String? = null,  // 市场ID（从买入订单获取）
     val marketTitle: String? = null,  // 市场名称
+    val marketSlug: String? = null,  // 市场 slug（用于构建 URL）
+    val marketCategory: String? = null,  // 市场分类（sports, crypto 等）
     val matchedQuantity: String,
     val buyPrice: String,
     val sellPrice: String,
