@@ -509,17 +509,21 @@ class PositionCheckService(
                     
                     if (position == null) {
                         // 仓位不存在，使用延迟检测机制
-                        // 先检查订单创建时间，只有超过2分钟的订单才进入延迟检测
+                        // 先查询创建时间超过2分钟的未匹配订单（SQL层过滤，避免刚创建的订单被误判）
                         val now = System.currentTimeMillis()
-                        val ordersToCheck = orders.filter { order ->
-                            val orderAge = now - order.createdAt
-                            orderAge > 120000  // 2分钟 = 120000毫秒
-                        }
-                        
+                        val thresholdTime = now - 120000  // 2分钟 = 120000毫秒
+
+                        val ordersToCheck = copyOrderTrackingRepository.findUnmatchedBuyOrdersByOutcomeIndexOlderThan(
+                            copyTradingId = copyTrading.id!!,
+                            marketId = marketId,
+                            outcomeIndex = outcomeIndex,
+                            thresholdTime = thresholdTime
+                        )
+
                         if (ordersToCheck.isNotEmpty()) {
                             // 有订单创建时间超过2分钟，记录到待检查列表
                             val checkKey = "${copyTrading.accountId}_${marketId}_${outcomeIndex}_${copyTrading.id}"
-                            
+
                             // 如果已经存在记录，更新订单列表（可能订单状态有变化）
                             val existingCheck = pendingPositionChecks[checkKey]
                             if (existingCheck == null) {
@@ -540,42 +544,58 @@ class PositionCheckService(
                             }
                         } else {
                             // 订单创建时间不足2分钟，可能是刚创建的订单，暂时不处理
-                            logger.debug("仓位不存在但订单创建时间不足2分钟，暂不标记为已卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, orderCount=${orders.size}, oldestOrderAge=${orders.minOfOrNull { now - it.createdAt }?.let { "${it}ms" } ?: "N/A"}, positionKey=$positionKey")
+                            logger.debug("仓位不存在但无符合条件的订单（创建时间不足2分钟），暂不标记为已卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, orderCount=${orders.size}, thresholdTime=$thresholdTime, positionKey=$positionKey")
                         }
                     } else {
                         // 有仓位，先检查是否有对应的待检查记录，如果有则删除（仓位已恢复）
                         val checkKey = "${copyTrading.accountId}_${marketId}_${outcomeIndex}_${copyTrading.id}"
                         val pendingCheck = pendingPositionChecks.remove(checkKey)
                         if (pendingCheck != null) {
-                            logger.info("仓位已恢复，删除待检查记录: marketId=$marketId, outcomeIndex=$outcomeIndex, accountId=${copyTrading.accountId}, copyTradingId=${copyTrading.id}, elapsedTime=${System.currentTimeMillis() - pendingCheck.firstDetectedTime}ms")
+                            logger.info("待检查仓位已恢复，删除待检查记录: marketId=$marketId, outcomeIndex=$outcomeIndex, accountId=${copyTrading.accountId}, copyTradingId=${copyTrading.id}, elapsedTime=${System.currentTimeMillis() - pendingCheck.firstDetectedTime}ms")
                         }
                         
                         // 有仓位，按订单下单顺序（FIFO）更新状态
+                        // 先查询创建时间超过2分钟的未匹配订单（SQL层过滤，避免刚创建的订单被误判）
+                        val now = System.currentTimeMillis()
+                        val thresholdTime = now - 120000  // 2分钟 = 120000毫秒
+                        
+                        val validOrders = copyOrderTrackingRepository.findUnmatchedBuyOrdersByOutcomeIndexOlderThan(
+                            copyTradingId = copyTrading.id!!,
+                            marketId = marketId,
+                            outcomeIndex = outcomeIndex,
+                            thresholdTime = thresholdTime
+                        )
+                        
+                        // 如果没有符合条件的订单，跳过处理
+                        if (validOrders.isEmpty()) {
+                            logger.debug("仓位存在但无符合条件的订单（创建时间不足2分钟），暂不进行FIFO匹配: marketId=$marketId, outcomeIndex=$outcomeIndex, thresholdTime=$thresholdTime")
+                            continue
+                        }
+                        
                         // 计算逻辑：
-                         // 1. 总订单数量 = 所有未卖出订单的剩余数量总和
+                         // 1. 总订单数量 = 所有符合条件的未卖出订单的剩余数量总和
                         // 2. 已成交数量 = 总订单数量 - 仓位数量（因为还有仓位，说明部分订单已卖出）
                         // 3. 如果已成交数量 = 0，说明订单还没有卖出，不修改订单状态
                         // 4. 如果已成交数量 > 0，按FIFO顺序匹配订单
                         val positionQuantity = position.quantity.toSafeBigDecimal()
-                        
-                        // 计算总订单数量
-                        val totalOrderQuantity = orders.fold(BigDecimal.ZERO) { sum, order ->
+
+                        // 计算总订单数量（只计算符合条件的订单）
+                        val totalOrderQuantity = validOrders.fold(BigDecimal.ZERO) { sum, order ->
                             sum.add(order.remainingQuantity.toSafeBigDecimal())
                         }
-                        
+
                         // 计算已成交数量
                         val soldQuantity = totalOrderQuantity.subtract(positionQuantity)
-                        
+
                         // 如果已成交数量 <= 0，说明订单还没有卖出，不修改订单状态
                         if (soldQuantity <= BigDecimal.ZERO) {
-                            logger.debug("仓位数量 >= 订单数量总和，订单尚未卖出: marketId=$marketId, outcomeIndex=$outcomeIndex, positionQuantity=$positionQuantity, totalOrderQuantity=$totalOrderQuantity")
                             continue
                         }
-                        
-                        // 如果已成交数量 > 0，按FIFO顺序匹配订单
+
+                        // 如果已成交数量 > 0，按FIFO顺序匹配订单（只匹配符合条件的订单）
                         try {
                         val currentPrice = getCurrentMarketPrice(marketId, outcomeIndex)
-                        updateOrdersAsSoldByFIFO(orders, soldQuantity, currentPrice,
+                        updateOrdersAsSoldByFIFO(validOrders, soldQuantity, currentPrice,
                             copyTrading.id, marketId, outcomeIndex)
                         } catch (e: Exception) {
                             logger.warn("无法获取市场价格，跳过FIFO匹配: marketId=$marketId, outcomeIndex=$outcomeIndex, error=${e.message}")

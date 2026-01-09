@@ -84,5 +84,23 @@ interface CopyOrderTrackingRepository : JpaRepository<CopyOrderTracking, Long> {
      */
     @Query("SELECT SUM(t.remainingQuantity * t.price) FROM CopyOrderTracking t WHERE t.copyTradingId = :copyTradingId AND t.marketId = :marketId AND t.remainingQuantity > 0")
     fun sumCurrentPositionValueByMarket(copyTradingId: Long, marketId: String): BigDecimal?
+
+    /**
+     * 查询指定跟单配置下，创建时间超过指定时间点的未匹配订单（FIFO顺序）
+     * 用于避免刚创建的订单被误判为已卖出
+     *
+     * @param copyTradingId 跟单配置ID
+     * @param marketId 市场ID
+     * @param outcomeIndex 结果索引
+     * @param thresholdTime 时间阈值（毫秒时间戳），只查询创建时间小于该值的订单
+     * @return 未匹配订单列表（按创建时间升序排列）
+     */
+    @Query("SELECT t FROM CopyOrderTracking t WHERE t.copyTradingId = :copyTradingId AND t.marketId = :marketId AND t.outcomeIndex = :outcomeIndex AND t.remainingQuantity > 0 AND t.createdAt < :thresholdTime ORDER BY t.createdAt ASC")
+    fun findUnmatchedBuyOrdersByOutcomeIndexOlderThan(
+        copyTradingId: Long,
+        marketId: String,
+        outcomeIndex: Int,
+        thresholdTime: Long
+    ): List<CopyOrderTracking>
 }
 
