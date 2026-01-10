@@ -1,3 +1,70 @@
+# v1.1.9
+
+## 🐛 Bug 修复
+
+### 修复盈亏统计计算错误问题
+
+- **问题**：在仓位检查时，刚创建的订单可能因仓位更新延迟被误判为已卖出，导致盈亏统计计算错误
+- **修复**：
+  - 优化自动卖出订单筛选逻辑，在 SQL 层直接过滤创建时间超过阈值的订单
+  - 新增 `findUnmatchedBuyOrdersByOutcomeIndexOlderThan` Repository 方法，提高查询效率
+  - 统一使用 2 分钟阈值保护刚创建的订单，避免误判
+  - 两个场景都使用 SQL 过滤：
+    * 场景1：仓位不存在时，延迟检测使用 SQL 过滤
+    * 场景2：仓位部分存在时，FIFO 匹配使用 SQL 过滤
+
+- **优化效果**：
+  - SQL 层面直接过滤，减少数据传输，提高查询效率
+  - 代码更简洁，逻辑更清晰
+  - 刚创建的订单（< 2 分钟）不会被误判为已卖出
+  - 确保盈亏统计计算的准确性
+
+## 📝 技术细节
+
+- **Repository 变更**：
+  - 新增 `findUnmatchedBuyOrdersByOutcomeIndexOlderThan` 方法
+  - 在 SQL 查询中添加 `createdAt < :thresholdTime` 条件过滤
+
+- **Service 变更**：
+  - `PositionCheckService` 中两个场景都使用 SQL 过滤替代内存过滤
+  - 统一使用 2 分钟（120000 毫秒）作为时间阈值
+
+## 📊 变更统计
+
+- **提交数量**：1 个提交
+- **文件变更**：2 个文件
+- **代码变更**：+57 行 / -19 行（净增加 38 行）
+
+### 详细文件变更
+
+**后端变更**：
+- `CopyOrderTrackingRepository.kt` - 新增 SQL 查询方法（+18 行）
+- `PositionCheckService.kt` - 优化订单筛选逻辑（+39 行 / -19 行）
+
+## 🔄 主要提交
+
+```
+6ad4024 fix: 优化自动卖出订单筛选逻辑，避免刚创建的订单被误判
+```
+
+## 🎯 升级建议
+
+1. **数据库迁移**：无需数据库迁移，可直接升级
+2. **配置更新**：无需配置变更
+3. **兼容性**：完全向后兼容，不影响现有功能
+
+## 📦 Docker 镜像
+
+Docker 镜像会自动构建并推送到 Docker Hub：
+- `wrbug/polyhermes:v1.1.9`
+- `wrbug/polyhermes:latest`（如果这是最新版本）
+
+## 🔗 相关链接
+
+- [GitHub Release](https://github.com/WrBug/PolyHermes/releases/tag/v1.1.9)
+
+---
+
 # v1.1.8
 
 ## 🚀 主要功能
