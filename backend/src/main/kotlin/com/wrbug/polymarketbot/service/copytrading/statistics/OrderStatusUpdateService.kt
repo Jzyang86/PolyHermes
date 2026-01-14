@@ -18,6 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 订单状态更新服务
@@ -41,6 +42,12 @@ class OrderStatusUpdateService(
     private val logger = LoggerFactory.getLogger(OrderStatusUpdateService::class.java)
     
     private val updateScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    
+    // 缓存首次检测到订单详情为 null 的时间戳（订单ID -> 首次检测时间）
+    private val orderNullDetectionTime = ConcurrentHashMap<String, Long>()
+    
+    // 订单详情为 null 的重试时间窗口（1分钟）
+    private val ORDER_NULL_RETRY_WINDOW_MS = 60000L
     
     @EventListener(ApplicationReadyEvent::class)
     fun onApplicationReady() {
@@ -219,24 +226,43 @@ class OrderStatusUpdateService(
                             // 响应体也可能返回字符串 "null"，Gson 解析时会返回 null
                             val orderDetail = orderResponse.body()
                             if (orderDetail == null) {
-                                // HTTP 200 且响应体为 null（或字符串 "null"），表示订单不存在
+                                // HTTP 200 且响应体为 null（或字符串 "null"），可能是网络异常或 API 暂时不可用
+                                // 使用兜底逻辑：首次检测不删除，1分钟后仍为 null 才删除
+                                val firstDetectionTime = orderNullDetectionTime.getOrPut(order.buyOrderId) { System.currentTimeMillis() }
+                                val currentTime = System.currentTimeMillis()
+                                
                                 // 检查订单是否已部分卖出，如果已部分卖出则保留订单用于统计
                                 val hasMatchedDetails = sellMatchDetailRepository.findByTrackingId(order.id!!).isNotEmpty()
                                 if (hasMatchedDetails || order.matchedQuantity > BigDecimal.ZERO) {
-                                    logger.debug("订单不存在但已部分卖出，保留订单用于统计: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, matchedQuantity=${order.matchedQuantity}")
+                                    logger.debug("订单详情为 null 但已部分卖出，保留订单用于统计: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, matchedQuantity=${order.matchedQuantity}")
+                                    // 清除缓存，下次重新检测
+                                    orderNullDetectionTime.remove(order.buyOrderId)
                                     continue
                                 }
                                 
-                                // 订单不存在且未部分卖出，删除本地订单
-                                logger.info("订单不存在（HTTP 200 但响应体为空），删除本地订单: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}")
+                                // 检查是否超过重试时间窗口
+                                if (currentTime - firstDetectionTime < ORDER_NULL_RETRY_WINDOW_MS) {
+                                    // 未超过重试窗口，记录日志并等待下次轮询
+                                    val elapsedSeconds = ((currentTime - firstDetectionTime) / 1000).toInt()
+                                    logger.debug("订单详情为 null（可能是网络异常），等待重试: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, 已等待=${elapsedSeconds}s, 重试窗口=${ORDER_NULL_RETRY_WINDOW_MS / 1000}s")
+                                    continue
+                                }
+                                
+                                // 超过重试窗口，删除本地订单
+                                logger.warn("订单详情为 null 超过重试窗口，删除本地订单: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, 已等待=$((currentTime - firstDetectionTime) / 1000}s")
                                 try {
                                     copyOrderTrackingRepository.deleteById(order.id!!)
                                     logger.info("已删除本地订单: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}")
+                                    // 清除缓存
+                                    orderNullDetectionTime.remove(order.buyOrderId)
                                 } catch (e: Exception) {
                                     logger.error("删除本地订单失败: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, error=${e.message}", e)
                                 }
                                 continue
                             }
+                            
+                            // 订单详情不为 null，清除缓存
+                            orderNullDetectionTime.remove(order.buyOrderId)
                             
                             // 检查订单是否成交
                             // 如果订单状态不是 FILLED 且已成交数量为0，说明未成交，删除
@@ -611,24 +637,43 @@ class OrderStatusUpdateService(
                     // 响应体也可能返回字符串 "null"，Gson 解析时会返回 null
                     val orderDetail = orderResponse.body()
                     if (orderDetail == null) {
-                        // HTTP 200 且响应体为 null（或字符串 "null"），表示订单不存在
+                        // HTTP 200 且响应体为 null（或字符串 "null"），可能是网络异常或 API 暂时不可用
+                        // 使用兜底逻辑：首次检测不删除，1分钟后仍为 null 才删除
+                        val firstDetectionTime = orderNullDetectionTime.getOrPut(order.buyOrderId) { System.currentTimeMillis() }
+                        val currentTime = System.currentTimeMillis()
+                        
                         // 检查订单是否已部分卖出，如果已部分卖出则保留订单用于统计
                         val hasMatchedDetails = sellMatchDetailRepository.findByTrackingId(order.id!!).isNotEmpty()
                         if (hasMatchedDetails || order.matchedQuantity > BigDecimal.ZERO) {
-                            logger.debug("订单不存在但已部分卖出，保留订单用于统计: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, matchedQuantity=${order.matchedQuantity}")
+                            logger.debug("订单详情为 null 但已部分卖出，保留订单用于统计: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, matchedQuantity=${order.matchedQuantity}")
+                            // 清除缓存，下次重新检测
+                            orderNullDetectionTime.remove(order.buyOrderId)
                             continue
                         }
                         
-                        // 订单不存在且未部分卖出，删除本地订单
-                        logger.info("订单不存在（HTTP 200 但响应体为空），删除本地订单: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}")
+                        // 检查是否超过重试时间窗口
+                        if (currentTime - firstDetectionTime < ORDER_NULL_RETRY_WINDOW_MS) {
+                            // 未超过重试窗口，记录日志并等待下次轮询
+                            val elapsedSeconds = ((currentTime - firstDetectionTime) / 1000).toInt()
+                            logger.debug("订单详情为 null（可能是网络异常），等待重试: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, 已等待=${elapsedSeconds}s, 重试窗口=${ORDER_NULL_RETRY_WINDOW_MS / 1000}s")
+                            continue
+                        }
+                        
+                        // 超过重试窗口，删除本地订单
+                        logger.warn("订单详情为 null 超过重试窗口，删除本地订单: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, 已等待=$((currentTime - firstDetectionTime) / 1000)s")
                         try {
                             copyOrderTrackingRepository.deleteById(order.id!!)
                             logger.info("已删除本地订单: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}")
+                            // 清除缓存
+                            orderNullDetectionTime.remove(order.buyOrderId)
                         } catch (e: Exception) {
                             logger.error("删除本地订单失败: orderId=${order.buyOrderId}, copyOrderTrackingId=${order.id}, error=${e.message}", e)
                         }
                         continue
                     }
+                    
+                    // 订单详情不为 null，清除缓存
+                    orderNullDetectionTime.remove(order.buyOrderId)
                     
                     // 获取实际价格和数量
                     val actualPrice = orderDetail.price?.toSafeBigDecimal() ?: order.price
